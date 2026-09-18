@@ -7,8 +7,8 @@ using Windows.System;
 namespace WlshareViewer;
 
 /// <summary>
-/// Where a session starts: a form for the host, the port, the user name, the
-/// password and the scale, for someone who opened the app from the Start menu
+/// Where a session starts: a form for the host, the port, the user name and
+/// the password, for someone who opened the app from the Start menu
 /// and has no command line to put them on.
 ///
 /// It is also where a session ends up — a refused or dropped connection brings
@@ -33,7 +33,6 @@ internal sealed partial class ConnectView : UserControl
         PortBox.Text = destination.Port.ToString(CultureInfo.InvariantCulture);
         UsernameBox.Text = destination.Username;
         PasswordBox.Password = destination.Password;
-        ScaleChoice.SelectedIndex = destination.Scale == 2 ? 1 : 0;
         Say(error);
         var first = string.IsNullOrEmpty(destination.Host) ? (Control)HostBox : PasswordBox;
         first.Focus(FocusState.Programmatic);
@@ -77,7 +76,6 @@ internal sealed partial class ConnectView : UserControl
             Port = port,
             Username = UsernameBox.Text.Trim(),
             Password = PasswordBox.Password,
-            Scale = ScaleChoice.SelectedIndex == 1 ? 2 : 1,
         });
     }
 }

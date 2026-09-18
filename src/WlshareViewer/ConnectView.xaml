@@ -12,10 +12,6 @@
             <TextBox x:Name="PortBox" Header="Port" PlaceholderText="5900" InputScope="Number" />
             <TextBox x:Name="UsernameBox" Header="User name" PlaceholderText="optional" />
             <PasswordBox x:Name="PasswordBox" Header="Password" PlaceholderText="none" />
-            <RadioButtons x:Name="ScaleChoice" Header="Desktop scale" MaxColumns="2" SelectedIndex="0">
-                <x:String>1×</x:String>
-                <x:String>2×</x:String>
-            </RadioButtons>
             <InfoBar x:Name="Message" Severity="Error" IsClosable="False" IsOpen="False" />
             <Button Content="Connect" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="OnConnect" />
         </StackPanel>

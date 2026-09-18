@@ -7,7 +7,7 @@ namespace WlshareViewer;
 /// <summary>
 /// A desktop to connect to, and what is remembered about it between launches.
 ///
-/// The host, the port, the user name and the scale are remembered, in
+/// The host, the port and the user name are remembered, in
 /// %LOCALAPPDATA%\wlshare\settings.json. The password is not: it is typed into
 /// the form each time, and a file is no place for one.
 /// </summary>
@@ -18,19 +18,13 @@ internal sealed record Destination
     public string Username { get; init; } = "";
     [JsonIgnore]
     public string Password { get; init; } = "";
-    /// <summary>
-    /// The scale the desktop is drawn at: 1 or 2. At 2 the desktop is half as
-    /// many points across and every one of them is two device pixels, which is
-    /// what makes it sharp on a high-DPI screen.
-    /// </summary>
-    public int Scale { get; init; } = 1;
 
     public string Label => Host.Contains(':') ? $"[{Host}]:{Port}" : $"{Host}:{Port}";
 
     /// <summary>
     /// The command line, for a launch that came from a shell:
     ///
-    ///     WlshareViewer.exe --server 192.168.1.10:5900 --username me --scale 2
+    ///     WlshareViewer.exe --server 192.168.1.10:5900 --username me
     ///
     /// Null when no --server was given, which is every launch from the Start
     /// menu — those get the form. There is no password argument: an argument
@@ -58,7 +52,6 @@ internal sealed record Destination
             Port = port,
             Username = Value("--username") ?? "",
             Password = "",
-            Scale = Value("--scale") == "2" ? 2 : 1,
         };
     }
 
@@ -92,7 +85,7 @@ internal sealed record Destination
             var saved = JsonSerializer.Deserialize(File.ReadAllText(SettingsPath), SettingsJson.Default.Destination);
             if (saved is not null)
             {
-                return saved with { Port = saved.Port == 0 ? (ushort)5900 : saved.Port, Scale = saved.Scale == 2 ? 2 : 1 };
+                return saved with { Port = saved.Port == 0 ? (ushort)5900 : saved.Port };
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)

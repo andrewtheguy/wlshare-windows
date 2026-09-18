@@ -15,21 +15,15 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <!-- The toolbar: what the desktop is, the scale it is drawn at, and
-                 the way out. Everything below it is the desktop's. -->
+            <!-- The toolbar: what the desktop is, and the way out. Everything
+                 below it is the desktop's. -->
             <Grid Padding="12,4" ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="SessionTitle" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                    <TextBlock Text="Scale" VerticalAlignment="Center" Margin="0,0,4,0" />
-                    <ToggleButton x:Name="Scale1" Content="1×" Click="OnScale" Tag="1" />
-                    <ToggleButton x:Name="Scale2" Content="2×" Click="OnScale" Tag="2" />
-                </StackPanel>
-                <Button Grid.Column="2" Content="Disconnect" Click="OnDisconnect" />
+                <Button Grid.Column="1" Content="Disconnect" Click="OnDisconnect" />
             </Grid>
 
             <Border x:Name="DesktopHost" Grid.Row="1" Background="Black" />

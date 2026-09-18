@@ -4,12 +4,12 @@ A native Windows client for the [`wlshare`](https://github.com/andrewtheguy/wlsh
 VNC server: a WinUI 3 window drawing a Win2D canvas, over a Rust core that
 speaks the whole RFB session.
 
-**Scope:** the screen, the keyboard, the pointer, and the desktop's scale —
-**1×** or **2×**, switched at any time from the toolbar. The desktop is asked to
-be exactly the window's size in device pixels and drawn at the chosen scale, so
-what is on screen is one device pixel per desktop pixel and never resampled: 2×
-is a desktop half as many points across and twice as sharp, which is what a
-high-DPI screen wants. The clipboard, the sound, the camera, the microphone and
+**Scope:** the screen, the keyboard and the pointer. The desktop is asked to be
+exactly the window's size in device pixels, so what is on screen is one device
+pixel per desktop pixel and never resampled, and it is drawn at **1×** or
+**2×** to match the screen the window is on: 2× on a screen scaled to 150% or
+more in Windows' display settings, 1× below that. Moving the window to another
+screen, or changing the setting, switches it. The clipboard, the sound, the camera, the microphone and
 picking an output are wlshare extensions this client does not speak yet.
 
 Windows 10 1809 or later, x64.
@@ -48,9 +48,9 @@ pwsh scripts/package-windows.ps1   # dist\package\WlshareViewer-windows-x64.msi
 
 ## Connecting
 
-The app opens on a form for the host, the port, the user name, the password
-and the scale, and connects when you fill it in. It comes back filled with the
-last destination and scale; the password is never remembered. **Disconnect**
+The app opens on a form for the host, the port, the user name and the
+password, and connects when you fill it in. It comes back filled with the last
+destination; the password is never remembered. **Disconnect**
 ends the session, and a connection that is refused or drops brings the form
 back with the reason on it.
 
@@ -61,7 +61,7 @@ that encrypts the session.
 A destination on the command line skips the form:
 
 ```powershell
-WlshareViewer.exe --server 192.168.1.10:5900 --username me --scale 2
+WlshareViewer.exe --server 192.168.1.10:5900 --username me
 ```
 
 There is no password argument, deliberately: an argument list is in the

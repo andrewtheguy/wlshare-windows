@@ -18,9 +18,9 @@ namespace WlshareViewer;
 ///
 /// It draws only when it is told to: a remote desktop that has not changed has
 /// nothing to redraw, and the window calls <see cref="Refresh"/> when the core
-/// says it has. Its size in device pixels, with the scale chosen for it, is what
-/// the desktop is asked to be, so at rest the picture is one device pixel per
-/// framebuffer pixel and never resampled.
+/// says it has. Its size in device pixels, at the scale that follows the
+/// screen's, is what the desktop is asked to be, so at rest the picture is one
+/// device pixel per framebuffer pixel and never resampled.
 /// </summary>
 internal sealed unsafe partial class DesktopView : UserControl
 {
@@ -52,7 +52,6 @@ internal sealed unsafe partial class DesktopView : UserControl
     private nint _cursorHandle;
 
     private Client.Surface _surface;
-    private double _desktopScale = 1;
 
     public DesktopView()
     {
@@ -75,6 +74,8 @@ internal sealed unsafe partial class DesktopView : UserControl
         SizeChanged += (_, _) => PostSurface();
         Loaded += (_, _) =>
         {
+            // A move to another screen, or a change to the scale setting, is a
+            // new density and maybe a new desktop scale.
             XamlRoot.Changed += (_, _) => PostSurface();
             PostSurface();
         };
@@ -90,29 +91,23 @@ internal sealed unsafe partial class DesktopView : UserControl
         LostFocus += (_, _) => ReleaseHeld();
     }
 
-    /// <summary>The scale the desktop is drawn at — 1 or 2. Changing it asks
-    /// the desktop to draw itself again at the new one.</summary>
-    public double DesktopScale
-    {
-        get => _desktopScale;
-        set
-        {
-            _desktopScale = value;
-            PostSurface();
-        }
-    }
-
     /// <summary>What the desktop is asked to be: this view's size in device
-    /// pixels, at the scale chosen for it.</summary>
+    /// pixels, at the scale that goes with the screen's.</summary>
     public Client.Surface Surface
     {
         get
         {
             var density = XamlRoot?.RasterizationScale ?? 1;
             static ushort Pixels(double value) => (ushort)Math.Clamp(Math.Round(value), 0, ushort.MaxValue);
-            return new Client.Surface(Pixels(ActualWidth * density), Pixels(ActualHeight * density), _desktopScale);
+            return new Client.Surface(Pixels(ActualWidth * density), Pixels(ActualHeight * density), DesktopScale(density));
         }
     }
+
+    /// <summary>The desktop is drawn at 1× or 2×, and the screen's scale
+    /// setting says which: 150% and up is a screen dense enough for 2×, and
+    /// 125% is closer to 1×. The Mac client takes its display's backing scale
+    /// the same way, and there is no switch.</summary>
+    private static double DesktopScale(double density) => density >= 1.5 ? 2 : 1;
 
     public void Attach(Client client)
     {

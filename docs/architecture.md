@@ -31,7 +31,8 @@ somebody's `../wlshare`.
 
 ## Scope
 
-The screen, the keyboard, the pointer, and the scale the desktop is drawn at.
+The screen, the keyboard, the pointer, and the scale the desktop is drawn at,
+which follows the screen's.
 The client lists ZRLE, Raw, Cursor, Cursor With Alpha, DesktopSize,
 ExtendedDesktopSize, Fence, ContinuousUpdates and the density extension, and
 nothing else. The server never offers the clipboard, sound, camera, microphone
@@ -42,31 +43,34 @@ dropped rather than ending the session.
 
 The window asks the desktop to be its own size in device pixels — the view's
 size times the screen's rasterization scale — so a framebuffer pixel is a device
-pixel and nothing is resampled. What it chooses is the *density* the desktop is
+pixel and nothing is resampled. The other half is the *density* the desktop is
 drawn at, through the density extension: at 1× a 1600-pixel-wide window is a
-1600-point desktop, at 2× it is an 800-point desktop drawn twice as finely. That
-is the whole of the toolbar's switch, and the connect form's choice of where to
-start.
+1600-point desktop, at 2× it is an 800-point desktop drawn twice as finely.
+
+The density follows the screen, as the Mac client's follows its display's
+backing scale, and there is no switch. Windows' scale setting comes in steps —
+100%, 125%, 150%, 175%, 200% and on — and the desktop has two, so 150% and
+up is 2× and anything less is 1× (`DesktopView.DesktopScale`). A 150% screen
+at 2× is still a device pixel per framebuffer pixel; its desktop is laid out
+for a density a little more than the screen's. The view hears of a move to
+another screen, or a change to the setting, through `XamlRoot.Changed`, and
+asks again.
 
 The density and the size go to the server one at a time. It applies both
 through wlr-output-management, whose configurations carry a serial the
 compositor bumps on every commit, so the second of two in flight is cancelled
 and comes back as an invalid layout. The density goes first and the size waits
-for the `OutputScale` that answers it (`Live::ask_for`). A switch at one window
-size is a density alone.
-
-The switch is independent of the screen's own scale setting. A window on a
-150% screen at 2× is still a device pixel per framebuffer pixel; its desktop is
-simply laid out for a density the screen does not quite have, which is the
-choice being offered.
+for the `OutputScale` that answers it (`Live::ask_for`). A move between a
+150% and a 200% screen is a new size at the same density; a move between a
+100% and a 200% one is both.
 
 ## Where a session begins
 
-`ConnectView` is a form for the host, the port, the user name, the password
-and the scale, and it is what the app opens on. `--server host:port` on the
+`ConnectView` is a form for the host, the port, the user name and the
+password, and it is what the app opens on. `--server host:port` on the
 command line skips it.
 
-The host, the port, the user name and the scale are remembered in
+The host, the port and the user name are remembered in
 `%LOCALAPPDATA%\wlshare\settings.json`. The password is not, anywhere — a file
 is no place for one — and it is not a command-line argument either, because an
 argument list is in the shell's history and every process listing.

@@ -1,6 +1,5 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using WlshareViewer.Interop;
 
 namespace WlshareViewer;
@@ -61,10 +60,9 @@ internal sealed partial class MainWindow : Window
         _last = destination;
         destination.Save();
 
-        var desktop = new DesktopView { DesktopScale = destination.Scale };
+        var desktop = new DesktopView();
         _desktop = desktop;
         DesktopHost.Child = desktop;
-        ShowScale(destination.Scale);
         SessionTitle.Text = destination.Label;
         Title = $"{destination.Label} — wlshare";
         Banner.Text = $"Connecting to {destination.Label}…";
@@ -142,34 +140,5 @@ internal sealed partial class MainWindow : Window
     {
         EndSession();
         Ask(null);
-    }
-
-    // ── 1× and 2× ───────────────────────────────────────────────────────────
-
-    private void OnScale(object sender, RoutedEventArgs e)
-    {
-        var scale = ((ToggleButton)sender).Tag as string == "2" ? 2 : 1;
-        ShowScale(scale);
-        if (_desktop is null)
-        {
-            return;
-        }
-        _desktop.DesktopScale = scale;
-        // Remembered, so the next session starts at the scale this one ended at.
-        if (_last is not null)
-        {
-            _last = _last with { Scale = scale };
-            _last.Save();
-        }
-        // The keyboard back to the desktop: the button took it.
-        _desktop.Focus(FocusState.Programmatic);
-    }
-
-    /// <summary>Two toggles that behave as one choice: the one that is the
-    /// scale is on, and clicking it again leaves it on.</summary>
-    private void ShowScale(int scale)
-    {
-        Scale1.IsChecked = scale == 1;
-        Scale2.IsChecked = scale == 2;
     }
 }
