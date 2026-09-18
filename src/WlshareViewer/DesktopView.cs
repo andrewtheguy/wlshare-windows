@@ -52,6 +52,8 @@ internal sealed unsafe partial class DesktopView : UserControl
     private nint _cursorHandle;
 
     private Client.Surface _surface;
+    /// <summary>The root whose changes this view follows, while it is loaded.</summary>
+    private XamlRoot? _root;
 
     public DesktopView()
     {
@@ -75,11 +77,31 @@ internal sealed unsafe partial class DesktopView : UserControl
         Loaded += (_, _) =>
         {
             // A move to another screen, or a change to the scale setting, is a
-            // new density and maybe a new desktop scale.
-            XamlRoot.Changed += (_, _) => PostSurface();
+            // new density and maybe a new desktop scale. Loaded can come more
+            // than once, and the root is subscribed to once.
+            if (_root != XamlRoot)
+            {
+                if (_root is not null)
+                {
+                    _root.Changed -= OnRootChanged;
+                }
+                _root = XamlRoot;
+                if (_root is not null)
+                {
+                    _root.Changed += OnRootChanged;
+                }
+            }
             PostSurface();
         };
-        Unloaded += (_, _) => ReleaseHeld();
+        Unloaded += (_, _) =>
+        {
+            if (_root is not null)
+            {
+                _root.Changed -= OnRootChanged;
+                _root = null;
+            }
+            ReleaseHeld();
+        };
 
         PointerPressed += OnPointerPressed;
         PointerReleased += OnPointer;
@@ -138,6 +160,8 @@ internal sealed unsafe partial class DesktopView : UserControl
             _cursorHandle = 0;
         }
     }
+
+    private void OnRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) => PostSurface();
 
     /// <summary>Tell the session what this view is now. Posting the same one
     /// twice is free — the session drops it.</summary>

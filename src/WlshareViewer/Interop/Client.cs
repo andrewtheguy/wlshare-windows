@@ -98,7 +98,8 @@ internal sealed unsafe class Client : IDisposable
 
     public Status Read()
     {
-        WlshareStatus raw;
+        // What a client that is gone reads as: the core writes nothing for it.
+        var raw = new WlshareStatus { State = Native.StateClosed };
         Native.Status(_handle, &raw);
         var state = raw.State switch
         {

@@ -23,7 +23,10 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw 'cargo not f
 # Named explicitly rather than left to the host default: the app is x64, and a
 # DLL for anything else loads with BadImageFormatException, which says nothing
 # about why.
-$Target = if ($env:WLSHARE_CORE_TARGET) { $env:WLSHARE_CORE_TARGET } else { 'x86_64-pc-windows-msvc' }
+$Target = 'x86_64-pc-windows-msvc'
+if ($env:WLSHARE_CORE_TARGET -and $env:WLSHARE_CORE_TARGET -ne $Target) {
+    throw "WLSHARE_CORE_TARGET is $env:WLSHARE_CORE_TARGET, and the core is built for $Target only"
+}
 $Flags = @('build', '--target', $Target)
 if ($Build -eq 'release') { $Flags += '--release' }
 

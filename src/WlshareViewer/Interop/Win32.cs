@@ -104,8 +104,14 @@ internal static unsafe partial class Win32
             into[i * 4 + 3] = a;
         }
         // A colour bitmap with alpha makes the mask a formality, but it has to
-        // be there and be the same size.
-        var mask = CreateBitmap(width, height, 1, 1, null);
+        // be there and be the same size. Zeroed rather than left to GDI, which
+        // leaves a bitmap made from no bits undefined; rows are WORD-aligned.
+        var maskBits = new byte[(width + 15) / 16 * 2 * height];
+        nint mask;
+        fixed (byte* bitsOfMask = maskBits)
+        {
+            mask = CreateBitmap(width, height, 1, 1, bitsOfMask);
+        }
         var info = new IconInfo { Icon = 0, HotspotX = (uint)hotspotX, HotspotY = (uint)hotspotY, Mask = mask, Color = color };
         var cursor = CreateIconIndirect(&info);
         DeleteObject(mask);

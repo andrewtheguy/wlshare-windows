@@ -287,7 +287,7 @@ async fn connect_and_run(config: Config, surface: Surface, shared: &Arc<Shared>,
         asked_scale: None,
         asked_size: None,
         awaiting_scale: false,
-        held_size: None,
+        held_surface: None,
         cursor_generation: 0,
     };
     session.ask_for(&mut writer, surface).await?;
@@ -431,11 +431,11 @@ struct Live {
     asked_scale: Option<f64>,
     asked_size: Option<(u16, u16)>,
     /// Set while a declared density is waiting for the `OutputScale` that
-    /// answers it. No size may go out until it arrives ([`Live::ask_for`]).
+    /// answers it. Nothing else may go out until it arrives ([`Live::ask_for`]).
     awaiting_scale: bool,
-    /// A size request waiting for the density that goes with it to be answered
-    /// ([`Live::ask_for`]).
-    held_size: Option<(u16, u16)>,
+    /// The window's latest surface, waiting for the density in flight to be
+    /// answered ([`Live::ask_for`]).
+    held_surface: Option<Surface>,
     cursor_generation: u64,
 }
 
@@ -448,10 +448,17 @@ impl Live {
     /// wlr-output-management, whose configurations carry a serial the
     /// compositor bumps on every commit, so the second of two in flight is
     /// cancelled and comes back as an invalid layout. The density goes first,
-    /// and the size waits in `held_size` for the `OutputScale` the extension
-    /// promises for every declaration — [`Live::released_by`] recognises it.
+    /// and while it is in flight the window's latest surface — its size, or a
+    /// density of its own — waits in `held_surface` for the `OutputScale` the
+    /// extension promises for every declaration; [`Live::released_by`]
+    /// recognises it, and the surface is then asked for as if just posted.
     async fn ask_for<W: AsyncWrite + Unpin>(&mut self, writer: &mut Writer<W>, surface: Surface) -> anyhow::Result<()> {
         if !surface.is_usable() {
+            return Ok(());
+        }
+        if self.awaiting_scale {
+            // Replaces whatever older surface was waiting.
+            self.held_surface = Some(surface);
             return Ok(());
         }
         let size = (surface.width, surface.height);
@@ -459,15 +466,7 @@ impl Live {
             writer.send(&client::client_density(surface.scale)).await?;
             self.asked_scale = Some(surface.scale);
             self.awaiting_scale = true;
-            self.held_size = (self.asked_size != Some(size)).then_some(size);
-            return Ok(());
-        }
-        if self.awaiting_scale {
-            // The density this size goes with is still in flight — a resize
-            // that caught up with it, or a window that went back to the scale
-            // it was already asking for. It waits with it rather than beside
-            // it, and replaces whatever older size was waiting.
-            self.held_size = (self.asked_size != Some(size)).then_some(size);
+            self.held_surface = Some(surface);
             return Ok(());
         }
         if self.asked_size != Some(size) {
@@ -549,9 +548,8 @@ impl Live {
                 self.shared.wake();
                 if self.awaiting_scale && self.released_by(scale) {
                     self.awaiting_scale = false;
-                    if let Some((width, height)) = self.held_size.take() {
-                        writer.send(&client::set_desktop_size(width, height)).await?;
-                        self.asked_size = Some((width, height));
+                    if let Some(held) = self.held_surface.take() {
+                        self.ask_for(writer, held).await?;
                     }
                 }
             }
@@ -688,7 +686,7 @@ mod tests {
             asked_scale: None,
             asked_size: None,
             awaiting_scale: false,
-            held_size: None,
+            held_surface: None,
             cursor_generation: 0,
         }
     }
@@ -779,6 +777,31 @@ mod tests {
         assert_eq!(
             sent(&mut writer),
             vec![ClientMsg::SetDesktopSize { width: 1200, height: 900, screens: vec![Screen::whole(1200, 900)] }]
+        );
+    }
+
+    /// A window that changes scale again before the first density is answered
+    /// must not have a second density slip past it either: the latest waits,
+    /// and goes out once the first is answered.
+    #[tokio::test]
+    async fn a_density_that_catches_up_with_a_density_waits_for_it() {
+        let mut live = live();
+        let mut writer = writer();
+
+        live.ask_for(&mut writer, Surface { width: 1600, height: 1200, scale: 2.0 }).await.unwrap();
+        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { fixed: to_fixed(2.0) }]);
+
+        live.ask_for(&mut writer, Surface { width: 800, height: 600, scale: 1.0 }).await.unwrap();
+        assert_eq!(sent(&mut writer), vec![], "one density in flight at a time");
+
+        live.handle(ServerMsg::OutputScale { width: 1024, height: 768, fixed: to_fixed(2.0) }, &mut writer).await.unwrap();
+        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { fixed: to_fixed(1.0) }], "the latest density follows the answer");
+
+        live.handle(ServerMsg::OutputScale { width: 1024, height: 768, fixed: to_fixed(1.0) }, &mut writer).await.unwrap();
+        assert_eq!(
+            sent(&mut writer),
+            vec![ClientMsg::SetDesktopSize { width: 800, height: 600, screens: vec![Screen::whole(800, 600)] }],
+            "and the size goes with it"
         );
     }
 

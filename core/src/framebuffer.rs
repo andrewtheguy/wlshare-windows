@@ -120,6 +120,10 @@ impl Framebuffer {
         if raw.len() != row * usize::from(height) {
             return false;
         }
+        // Nothing to draw, and `chunks_exact` panics on a row of zero bytes.
+        if width == 0 || height == 0 {
+            return true;
+        }
         let Some((out, stride)) = self.rect_mut(x, y, width, height) else { return false };
         for (n, line) in raw.chunks_exact(row).enumerate() {
             out[n * stride..n * stride + row].copy_from_slice(line);
@@ -185,6 +189,15 @@ mod tests {
         assert!(!fb.put_raw(3, 0, 2, 1, &[0; 8]));
         // A rectangle whose pixels are not the size it claims is refused too.
         assert!(!fb.put_raw(0, 0, 2, 2, &[0; 12]));
+        assert_eq!(fb.take_damage(), None);
+    }
+
+    #[test]
+    fn an_empty_raw_rectangle_draws_nothing_and_is_not_an_error() {
+        let mut fb = Framebuffer::new(4, 3);
+        assert!(fb.put_raw(1, 1, 0, 2, &[]));
+        assert!(fb.put_raw(1, 1, 2, 0, &[]));
+        assert!(!fb.put_raw(1, 1, 0, 2, &[0; 4]), "an empty rectangle with pixels is still the wrong size");
         assert_eq!(fb.take_damage(), None);
     }
 
