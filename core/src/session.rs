@@ -68,6 +68,11 @@ const ENCODINGS: &[i32] = &[
 
 /// How long to wait for the far end to answer at all.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long the handshake may take once connected, through ServerInit: a
+/// server that accepts a socket and never answers would otherwise leave the
+/// window connecting for good. Long enough for a PAM login that is slow to say
+/// no.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a live resize settles before the desktop is asked to follow it.
 /// A drag posts a size every frame, and each one the server honoured would be a
 /// compositor mode change and a full repaint.
@@ -261,7 +266,9 @@ async fn connect_and_run(config: Config, surface: Surface, shared: &Arc<Shared>,
             .with_context(|| format!("connecting to {}:{}", config.host, config.port))?;
         socket.set_nodelay(true)?;
         let (reader, writer) = socket.into_split();
-        handshake(reader, writer, &config, key).await
+        tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(reader, writer, &config, key))
+            .await
+            .with_context(|| format!("{}:{} did not finish its handshake within {HANDSHAKE_TIMEOUT:?}", config.host, config.port))?
     };
     let Some((mut reader, mut writer, init)) = while_connecting(&mut commands, &mut surface, connecting).await.transpose()? else {
         return Ok(());
@@ -272,7 +279,7 @@ async fn connect_and_run(config: Config, surface: Surface, shared: &Arc<Shared>,
         status.name = init.name.clone();
         status.state = State::Ready;
     }
-    shared.framebuffer.lock().unwrap().resize(init.width, init.height);
+    shared.framebuffer.lock().unwrap().resize(init.width, init.height)?;
     shared.wake();
 
     // The server's own format, so that nothing on this path swizzles a pixel.
@@ -598,7 +605,7 @@ impl Live {
                 Ok(Applied::Drew)
             }
             RectBody::DesktopSize => {
-                self.resize(width, height);
+                self.resize(width, height)?;
                 Ok(Applied::Resized)
             }
             // The rectangle's y is the status: anything but zero answers a
@@ -608,7 +615,7 @@ impl Live {
                 Ok(Applied::Nothing)
             }
             RectBody::ExtendedDesktopSize { .. } => {
-                self.resize(width, height);
+                self.resize(width, height)?;
                 Ok(Applied::Resized)
             }
             RectBody::Cursor { pixels, mask } => {
@@ -632,9 +639,9 @@ impl Live {
         }
     }
 
-    fn resize(&mut self, width: u16, height: u16) {
+    fn resize(&mut self, width: u16, height: u16) -> anyhow::Result<()> {
         log::info!("the desktop is now {width}x{height}");
-        self.shared.framebuffer.lock().unwrap().resize(width, height);
+        self.shared.framebuffer.lock().unwrap().resize(width, height)
     }
 
     fn set_cursor(&mut self, image: Option<CursorImage>) {
@@ -822,7 +829,7 @@ mod tests {
     async fn a_resize_turns_continuous_updates_on_over_the_framebuffer_that_is_now() {
         let mut live = live();
         let mut writer = writer();
-        live.shared.framebuffer.lock().unwrap().resize(1024, 768);
+        live.shared.framebuffer.lock().unwrap().resize(1024, 768).unwrap();
 
         let rect = client::Rect { x: 0, y: 0, width: 800, height: 600, body: RectBody::DesktopSize };
         live.handle(ServerMsg::Update(vec![rect]), &mut writer).await.unwrap();
@@ -862,27 +869,27 @@ mod tests {
     fn a_pointer_lands_where_it_was_aimed_whatever_the_desktop_is_doing() {
         let live = live();
         // Matched, which is the steady state: the position is itself.
-        live.shared.framebuffer.lock().unwrap().resize(800, 600);
+        live.shared.framebuffer.lock().unwrap().resize(800, 600).unwrap();
         assert_eq!(live.to_framebuffer(0, 0), (0, 0));
         assert_eq!(live.to_framebuffer(400, 300), (400, 300));
         assert_eq!(live.to_framebuffer(799, 599), (799, 599));
 
         // Mid-resize, the desktop still half the window: the fractions hold and
         // nothing lands outside the framebuffer.
-        live.shared.framebuffer.lock().unwrap().resize(400, 300);
+        live.shared.framebuffer.lock().unwrap().resize(400, 300).unwrap();
         assert_eq!(live.to_framebuffer(400, 300), (200, 150));
         assert_eq!(live.to_framebuffer(799, 599), (399, 299));
         assert_eq!(live.to_framebuffer(65535, 65535), (399, 299));
 
         // No desktop at all, which is every event before ServerInit.
-        live.shared.framebuffer.lock().unwrap().resize(0, 0);
+        live.shared.framebuffer.lock().unwrap().resize(0, 0).unwrap();
         assert_eq!(live.to_framebuffer(10, 10), (0, 0));
     }
 
     #[test]
     fn a_rectangle_outside_the_framebuffer_ends_the_session_rather_than_the_process() {
         let mut live = live();
-        live.shared.framebuffer.lock().unwrap().resize(64, 64);
+        live.shared.framebuffer.lock().unwrap().resize(64, 64).unwrap();
         let rect = client::Rect { x: 60, y: 0, width: 8, height: 8, body: RectBody::Raw(vec![0; 8 * 8 * 4]) };
         assert!(live.apply(rect).is_err());
 
@@ -913,7 +920,7 @@ mod tests {
     #[test]
     fn a_refused_resize_leaves_the_framebuffer_alone() {
         let mut live = live();
-        live.shared.framebuffer.lock().unwrap().resize(64, 64);
+        live.shared.framebuffer.lock().unwrap().resize(64, 64).unwrap();
         // Status 1 in the rectangle's y: the request failed.
         let rect = client::Rect { x: 1, y: 1, width: 800, height: 600, body: RectBody::ExtendedDesktopSize { screens: Vec::new() } };
         assert!(matches!(live.apply(rect), Ok(Applied::Nothing)));

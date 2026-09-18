@@ -11,7 +11,13 @@
 //! buffer is a different size and its bitmap has to be made again, and the
 //! damage, which is the region to upload when it is not.
 
+use anyhow::{bail, Context};
 use wlshare_rfb::pixel::PixelFormat;
+
+/// The most a framebuffer may take, which is 16384x16384 — twice an 8K
+/// display each way. The size is the server's to say, and a u16 each way would
+/// otherwise let it ask for 16 GiB and end the viewer with a failed allocation.
+const MAX_BYTES: usize = 1 << 30;
 
 /// A region of the framebuffer, in pixels from its top left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,18 +92,27 @@ impl Framebuffer {
 
     /// Become a black framebuffer of a new size, or do nothing if that is the
     /// size already. The whole of a new one is damaged: the server repaints it
-    /// after announcing it, but the window may draw in between.
-    pub fn resize(&mut self, width: u16, height: u16) {
+    /// after announcing it, but the window may draw in between. A size over
+    /// [`MAX_BYTES`], or one there is not the memory for, is an error and
+    /// leaves the framebuffer as it was.
+    pub fn resize(&mut self, width: u16, height: u16) -> anyhow::Result<()> {
         if (width, height) == (self.width, self.height) {
-            return;
+            return Ok(());
         }
-        self.pixels.clear();
-        self.pixels.resize(Self::len(width, height), 0);
+        let len = Self::len(width, height);
+        if len > MAX_BYTES {
+            bail!("a {width}x{height} desktop is larger than this viewer takes");
+        }
+        let mut pixels = Vec::new();
+        pixels.try_reserve_exact(len).with_context(|| format!("allocating a {width}x{height} framebuffer"))?;
+        pixels.resize(len, 0);
+        self.pixels = pixels;
         self.width = width;
         self.height = height;
         self.generation += 1;
         self.damage = None;
         self.damage_all();
+        Ok(())
     }
 
     /// The rectangle's bytes and the stride they are written at, for a decoder
@@ -219,15 +234,25 @@ mod tests {
         assert!(fb.put_raw(0, 0, 2, 2, &[9; 16]));
         let generation = fb.generation();
 
-        fb.resize(2, 2);
+        fb.resize(2, 2).unwrap();
         assert_eq!(fb.generation(), generation, "the same size is not a resize");
         assert_eq!(pixel(&fb, 0, 0), [9; 4]);
 
-        fb.resize(3, 1);
+        fb.resize(3, 1).unwrap();
         assert_ne!(fb.generation(), generation);
         assert_eq!((fb.width(), fb.height()), (3, 1));
         assert_eq!(fb.pixels().len(), 12);
         assert_eq!(fb.pixels(), &[0; 12]);
         assert_eq!(fb.take_damage(), Some(Region { x: 0, y: 0, width: 3, height: 1 }));
+    }
+
+    #[test]
+    fn a_desktop_too_large_to_hold_is_refused_and_changes_nothing() {
+        let mut fb = Framebuffer::new(3, 1);
+        let generation = fb.generation();
+        assert!(fb.resize(u16::MAX, u16::MAX).is_err());
+        assert_eq!((fb.width(), fb.height()), (3, 1));
+        assert_eq!(fb.pixels().len(), 12);
+        assert_eq!(fb.generation(), generation);
     }
 }

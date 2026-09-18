@@ -35,11 +35,14 @@ Push-Location core
 try {
     & cargo @Flags
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed (exit $LASTEXITCODE)" }
+    # Where cargo actually put it, asked of cargo: the CI VM sets a machine-wide
+    # CARGO_TARGET_DIR outside the workspace, and a relative one or a target-dir
+    # in cargo's config would be misread here.
+    $Metadata = & cargo metadata --format-version 1 --no-deps
+    if ($LASTEXITCODE -ne 0) { throw "cargo metadata failed (exit $LASTEXITCODE)" }
+    $TargetDir = ($Metadata | ConvertFrom-Json).target_directory
 } finally { Pop-Location }
 
-# The CI VM sets a machine-wide CARGO_TARGET_DIR outside the workspace, so the
-# DLL is looked for where cargo actually put it.
-$TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $PSScriptRoot 'core' 'target' }
 $Dll = Join-Path $TargetDir $Target $Build 'wlshare_client_core.dll'
 if (-not (Test-Path $Dll)) { throw "no DLL at $Dll" }
 

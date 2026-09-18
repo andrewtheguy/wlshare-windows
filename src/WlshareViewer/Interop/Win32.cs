@@ -24,6 +24,11 @@ internal static unsafe partial class Win32
     /// That is the character the desktop is sent: with Control held, Control-A
     /// types U+0001, which is not the key that was pressed.
     ///
+    /// AltGr is the exception. Windows reports it as left Control and right
+    /// Alt, and on a layout that has it, it is what types @, € or {; so while it
+    /// is held the key is asked with both kept, and only a key AltGr types
+    /// nothing with is asked again without them.
+    ///
     /// A dead key answers with the accent it would put on the next key, which
     /// is what the desktop is sent for it; the desktop does its own composing.
     /// </summary>
@@ -34,12 +39,21 @@ internal static unsafe partial class Win32
         {
             return 0;
         }
-        foreach (var modifier in (ReadOnlySpan<int>)[VkControl, VkLControl, VkRControl, VkMenu, VkLMenu, VkRMenu])
-        {
-            state[modifier] = 0;
-        }
+        var layout = GetKeyboardLayout(0);
         var typed = stackalloc char[8];
-        var count = Math.Abs(ToUnicodeEx(vk, scan, state, typed, 8, NoStateChange, GetKeyboardLayout(0)));
+        var count = 0;
+        if ((state[VkRMenu] & 0x80) != 0 && (state[VkLControl] & 0x80) != 0)
+        {
+            count = Math.Abs(ToUnicodeEx(vk, scan, state, typed, 8, NoStateChange, layout));
+        }
+        if (count == 0)
+        {
+            foreach (var modifier in (ReadOnlySpan<int>)[VkControl, VkLControl, VkRControl, VkMenu, VkLMenu, VkRMenu])
+            {
+                state[modifier] = 0;
+            }
+            count = Math.Abs(ToUnicodeEx(vk, scan, state, typed, 8, NoStateChange, layout));
+        }
         if (count == 0)
         {
             return 0;
