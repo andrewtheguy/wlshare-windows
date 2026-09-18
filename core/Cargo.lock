@@ -830,8 +830,8 @@ dependencies = [
 
 [[package]]
 name = "wlshare-rfb"
-version = "0.0.25"
-source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.25#80f3092eb49293962bd370cf74039b2a92b17f56"
+version = "0.0.26"
+source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.26#f20c59ece1f0923035515f5b18648b77155d6274"
 dependencies = [
  "aes",
  "eax",

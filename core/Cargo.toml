@@ -26,7 +26,7 @@ crate-type = ["cdylib", "rlib"]
 #
 # That rewrites Cargo.lock while it is in force, so put the pinned one back
 # (`git checkout core/Cargo.lock`) before committing anything.
-wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.25" }
+wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.26" }
 anyhow = "1"
 log = "0.4"
 tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "sync", "time", "macros"] }
