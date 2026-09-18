@@ -13,6 +13,7 @@ internal sealed partial class MainWindow : Window
 {
     private Client? _client;
     private DesktopView? _desktop;
+    private ClipboardSync? _clipboard;
     /// <summary>The last destination tried, which is what the form comes back
     /// filled with — including a password that was typed, so a connection that
     /// failed for some other reason can be retried as it is.</summary>
@@ -28,6 +29,15 @@ internal sealed partial class MainWindow : Window
         // Ends the session and joins its thread while there is still a window
         // for its callbacks to have reached.
         Closed += (_, _) => EndSession();
+        // The moments the window becomes the one in use, which is when the
+        // Windows clipboard is offered to the desktop.
+        Activated += (_, e) =>
+        {
+            if (e.WindowActivationState != WindowActivationState.Deactivated)
+            {
+                _clipboard?.Offer();
+            }
+        };
 
         // A launch from a shell says where to go; a launch from the Start menu
         // asks.
@@ -80,6 +90,11 @@ internal sealed partial class MainWindow : Window
                 return;
             }
             _client = new Client(destination, desktop.Surface, DispatcherQueue, Changed);
+            // Offered at once: the window is the one in use, the form having
+            // just been filled in. The core keeps it until the desktop can be
+            // told.
+            _clipboard = new ClipboardSync(_client, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            _clipboard.Offer();
             desktop.Attach(_client);
             desktop.Focus(FocusState.Programmatic);
             Changed();
@@ -92,13 +107,14 @@ internal sealed partial class MainWindow : Window
         _desktop?.Detach();
         _desktop = null;
         DesktopHost.Child = null;
+        _clipboard = null;
         // Joins the session's thread: nothing calls back after this.
         _client?.Dispose();
         _client = null;
     }
 
-    /// <summary>The session has something new: a frame, a size, a state.
-    /// Called on the window's thread.</summary>
+    /// <summary>The session has something new: a frame, a size, a state, the
+    /// desktop's clipboard. Called on the window's thread.</summary>
     private void Changed()
     {
         if (_client is null || _desktop is null)
@@ -122,6 +138,7 @@ internal sealed partial class MainWindow : Window
                 Ask(status.Error ?? "The connection closed.");
                 return;
         }
+        _clipboard?.Take();
         _desktop.Refresh();
     }
 

@@ -1,6 +1,6 @@
 //! A session against a real wlshare, which no unit test can stand in for: the
-//! handshake, the ZRLE stream, the cursor and the density extension all only
-//! exist between two processes.
+//! handshake, the ZRLE stream, the cursor, the density extension and the
+//! clipboard all only exist between two processes.
 //!
 //! Ignored by default and pointed at `WLSHARE_TEST_SERVER`, or `127.0.0.1:5900`,
 //! as `WLSHARE_TEST_USERNAME` with `WLSHARE_TEST_PASSWORD`, or unauthenticated
@@ -147,4 +147,26 @@ fn the_pointer_has_a_shape_and_input_is_taken() {
     std::thread::sleep(Duration::from_millis(500));
     let status = client.status();
     assert_eq!(status.state, State::Ready, "the session survived the input: {:?}", status.error);
+}
+
+#[test]
+#[ignore = "needs a wlshare server; see the module comment"]
+fn a_clipboard_given_by_one_window_reaches_another_through_the_desktop() {
+    // The server keeps a clipboard a client set out of that client's own
+    // notifications, so the far end of the round trip is a second session.
+    let giver = connect(Surface { width: 1024, height: 768, scale: 1.0 });
+    let taker = connect(Surface { width: 1024, height: 768, scale: 1.0 });
+    let seen = taker.with_clipboard(|generation, _| generation);
+
+    // Unique per run, so a desktop clipboard left over from the last one is not
+    // mistaken for this.
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("a clock after 1970").as_nanos();
+    let text = format!("画面\nnaïve ☕ {nanos}");
+    giver.clipboard(text.clone());
+
+    // Exactly as it went: UTF-8, and the line ending the wire carries as CRLF
+    // back as LF.
+    until("the clipboard on the other session", || {
+        taker.with_clipboard(|generation, arrived| (generation != seen && arrived == Some(text.as_str())).then_some(()))
+    });
 }

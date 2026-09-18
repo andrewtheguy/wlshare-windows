@@ -6,7 +6,7 @@ desktop. Two halves, and the line between them is a C ABI:
 ```
   WinUI ──▶ DesktopView ──▶ Client.cs ──▶ Native.cs ═══ wlshare_client_core.dll
                  ▲                                              │
-                 │ a frame, a cursor, a state                   ▼
+                 │ a frame, a cursor, a state, a clipboard      ▼
                  └──────────────────── core/ (Rust) ──▶ wlshare-rfb ──▶ the socket
 ```
 
@@ -17,7 +17,7 @@ protocol and the core knows no WinUI, which is what lets the whole of the first
 be unit-tested on a machine that has never seen the second.
 
 It is `../wlshare-macos` with the AppKit half swapped for WinUI. The core is
-that repo's core, less the clipboard and the sound, with the two tables that
+that repo's core, less the sound, with the two tables that
 are about the keyboard and the wheel rewritten for Windows. What is different is
 how the halves meet: the Mac app links the core as a static library, and .NET
 can call native code only out of a DLL it loads at run time, so here the crate
@@ -31,13 +31,13 @@ somebody's `../wlshare`.
 
 ## Scope
 
-The screen, the keyboard, the pointer, and the scale the desktop is drawn at,
-which follows the screen's.
+The screen, the keyboard, the pointer, the scale the desktop is drawn at,
+which follows the screen's, and the clipboard.
 The client lists ZRLE, Raw, Cursor, Cursor With Alpha, DesktopSize,
-ExtendedDesktopSize, Fence, ContinuousUpdates and the density extension, and
-nothing else. The server never offers the clipboard, sound, camera, microphone
-or output selection; a message of one that arrives anyway is framed and
-dropped rather than ending the session.
+ExtendedDesktopSize, Fence, ContinuousUpdates, the density extension and
+Extended Clipboard, and nothing else. The server never offers sound, camera,
+microphone or output selection; a message of one that arrives anyway is framed
+and dropped rather than ending the session.
 
 ## 1× and 2×
 
@@ -146,16 +146,49 @@ with, and everything held is let go when the view loses the keyboard.
 Caps Lock and Num Lock are not sent: a character reaches the desktop already
 cased, and a keypad key already says which of its two meanings it is.
 
+## The clipboard
+
+Text, both ways, through Extended Clipboard — UTF-8, which is the only
+clipboard wlshare speaks; a latin-1 cut text is dropped. Nothing is said about
+either clipboard until the server's caps arrive, which it sends on every
+`SetEncodings`, and every caps is answered with the client's own: text, every
+action, and no unsolicited text. `wlshare-rfb` turns the wire's CRLF into LF
+and back; the window turns LF into Windows' CRLF on the way onto its clipboard.
+
+**The desktop's.** A notify is answered with a request at once rather than when
+something pastes, so the text is on the Windows clipboard before anything can
+paste it. It goes into `Shared` with a generation, the window is woken, and
+`ClipboardSync.Take` puts a generation it has not seen on the clipboard. A
+notify of nothing — the desktop's clipboard cleared, or holding no text — leaves
+the Windows one alone.
+
+**The Windows one.** The window looks when it becomes the one in use — the
+session starts, or the window is activated — which is also the only moment a
+paste into the desktop can next happen. If `GetClipboardSequenceNumber` has
+moved, the clipboard's text goes to the core, which notifies the desktop and
+sends the text only when the desktop asks. The desktop therefore never learns
+anything copied while the window was not in front, and never anything the
+window did not hand over. A clipboard the window hands over before the session
+is ready is kept, and notified once the caps arrive.
+
+The clipboard is read and written through Win32 rather than WinRT's
+`Clipboard`, whose reads are asynchronous: the sequence number has to be read in
+the same breath as the text it numbers. Neither direction sends back what the
+other just did: `ClipboardSync` records the sequence number both after offering
+and after writing the desktop's text, and the server keeps a clipboard a client
+set out of its own notifications.
+
 ## The C ABI
 
 `core/src/ffi.rs` is the only place in the crate with `unsafe` in it, and it is
 a shell: each function turns C arguments into Rust ones, calls one method, and
 turns the answer back.
 
-Framebuffer and cursor are read through *callbacks* rather than a lock/unlock
-pair, so there is no guard to hold across the boundary and no way to forget to
-release one. The callback runs with the lock held and is handed pointers that
-live only for that call, which is exactly long enough to upload a bitmap. The C#
+Framebuffer, cursor and the desktop's clipboard are read through *callbacks*
+rather than a lock/unlock pair, so there is no guard to hold across the
+boundary and no way to forget to release one. The callback runs with the lock
+held and is handed pointers that live only for that call, which is exactly long
+enough to upload a bitmap or copy a string. The C#
 trampolines are `[UnmanagedCallersOnly]` and catch everything: an exception may
 not unwind through Rust, so it is carried out and rethrown on the C# side of the
 call.
