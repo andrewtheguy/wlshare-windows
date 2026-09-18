@@ -32,6 +32,7 @@ const TYPES: &[(&str, &str)] = &[
     ("*mut c_char", "byte*"),
     ("*const u8", "byte*"),
     ("*mut u8", "byte*"),
+    ("*mut f32", "float*"),
     ("*mut c_void", "nint"),
     // Opaque to the app, which only ever hands it back.
     ("*const Client", "nint"),

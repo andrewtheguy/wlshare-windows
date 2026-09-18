@@ -14,6 +14,7 @@ internal sealed partial class MainWindow : Window
     private Client? _client;
     private DesktopView? _desktop;
     private ClipboardSync? _clipboard;
+    private AudioOutput? _audio;
     /// <summary>The last destination tried, which is what the form comes back
     /// filled with — including a password that was typed, so a connection that
     /// failed for some other reason can be retried as it is.</summary>
@@ -113,6 +114,10 @@ internal sealed partial class MainWindow : Window
         _desktop = null;
         DesktopHost.Child = null;
         _clipboard = null;
+        // Before the client: the audio thread reads from it until it has
+        // stopped.
+        _audio?.Dispose();
+        _audio = null;
         // Joins the session's thread: nothing calls back after this.
         _client?.Dispose();
         _client = null;
@@ -136,6 +141,12 @@ internal sealed partial class MainWindow : Window
                 var name = status.Name.Length == 0 ? _last?.Label : status.Name;
                 SessionTitle.Text = $"{name} — {status.Width}×{status.Height} @ {Scale(status.Scale)}";
                 Title = $"{name} — wlshare";
+                // Not before the server has said it has sound: a session
+                // without it leaves the Windows audio device alone.
+                if (status.Audio && _audio is null)
+                {
+                    _audio = new AudioOutput(_client);
+                }
                 break;
             case Client.State.Closed:
                 // Back to the form with the reason on it.

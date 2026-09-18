@@ -19,6 +19,8 @@ internal struct WlshareStatus
     public uint Width;
     public uint Height;
     public double Scale;
+    // The desktop's sound is on: asked for, and the server has it.
+    public bool Audio;
 }
 
 /// <summary>
@@ -74,9 +76,9 @@ internal static unsafe partial class Native
 
     // Start a session. Never null: a connection that fails does so in the
     // status. An empty password asks for the None security type, any other for
-    // RSA-AES.
+    // RSA-AES. `audio` asks for the desktop's sound.
     [LibraryImport(Dll, EntryPoint = "wlshare_client_connect", StringMarshalling = StringMarshalling.Utf8)]
-    internal static partial nint Connect(string host, ushort port, string username, string password, ushort surfaceWidth, ushort surfaceHeight, double scale);
+    internal static partial nint Connect(string host, ushort port, string username, string password, [MarshalAs(UnmanagedType.U1)] bool audio, ushort surfaceWidth, ushort surfaceHeight, double scale);
 
     // End the session and wait for its thread. The wake callback is cleared
     // first, so nothing calls back into the app after this returns.
@@ -126,6 +128,12 @@ internal static unsafe partial class Native
     // null and 0 before the desktop has provided any.
     [LibraryImport(Dll, EntryPoint = "wlshare_client_with_clipboard")]
     internal static partial void WithClipboard(nint client, delegate* unmanaged[Cdecl]<nint, ulong, byte*, nuint, void> visit, nint ctx);
+
+    // The next `frames` of the desktop's sound, 48 kHz stereo, into two
+    // separate channel buffers — silence where there is none yet. For the audio
+    // device's render thread; the core holds its lock for the copy.
+    [LibraryImport(Dll, EntryPoint = "wlshare_client_read_audio")]
+    internal static partial void ReadAudio(nint client, float* left, float* right, nuint frames);
 
     [LibraryImport(Dll, EntryPoint = "wlshare_client_wheel")]
     internal static partial nuint Wheel(nint client, int delta, [MarshalAs(UnmanagedType.U1)] bool horizontal, byte* output, nuint cap);

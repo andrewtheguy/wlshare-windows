@@ -6,7 +6,8 @@ desktop. Two halves, and the line between them is a C ABI:
 ```
   WinUI ──▶ DesktopView ──▶ Client.cs ──▶ Native.cs ═══ wlshare_client_core.dll
                  ▲                                              │
-                 │ a frame, a cursor, a state, a clipboard      ▼
+                 │ a frame, a cursor, a state, a clipboard,     ▼
+                 │ the sound                                    │
                  └──────────────────── core/ (Rust) ──▶ wlshare-rfb ──▶ the socket
 ```
 
@@ -17,7 +18,7 @@ protocol and the core knows no WinUI, which is what lets the whole of the first
 be unit-tested on a machine that has never seen the second.
 
 It is `../wlshare-macos` with the AppKit half swapped for WinUI. The core is
-that repo's core, less the sound, with the two tables that
+that repo's core, with the two tables that
 are about the keyboard and the wheel rewritten for Windows. What is different is
 how the halves meet: the Mac app links the core as a static library, and .NET
 can call native code only out of a DLL it loads at run time, so here the crate
@@ -32,12 +33,13 @@ somebody's `../wlshare`.
 ## Scope
 
 The screen, the keyboard, the pointer, the scale the desktop is drawn at,
-which follows the screen's, and the clipboard.
-The client lists ZRLE, Raw, Cursor, Cursor With Alpha, DesktopSize,
-ExtendedDesktopSize, Fence, ContinuousUpdates, the density extension and
-Extended Clipboard, and nothing else. The server never offers sound, camera,
-microphone or output selection; a message of one that arrives anyway is framed
-and dropped rather than ending the session.
+which follows the screen's, the clipboard, and the desktop's sound when it is
+asked for. The client lists ZRLE, Raw, Cursor, Cursor With Alpha, DesktopSize,
+ExtendedDesktopSize, Fence, ContinuousUpdates, the density extension, Extended
+Clipboard and — only when the form's sound checkbox is ticked — the audio
+extension, and nothing else. The server never offers camera, microphone or
+output selection; sound that arrives unasked is framed and dropped rather than
+ending the session.
 
 ## 1× and 2×
 
@@ -71,11 +73,12 @@ one `ClientDensity`.
 
 ## Where a session begins
 
-`ConnectView` is a form for the host, the port, the user name and the
-password, and it is what the app opens on. `--server host:port` on the
-command line skips it.
+`ConnectView` is a form for the host, the port, the user name, the password
+and **Play the desktop's sound**, and it is what the app opens on.
+`--server host:port` on the command line skips it, with `--audio` for the
+checkbox.
 
-The host, the port and the user name are remembered in
+The host, the port, the user name and the sound checkbox are remembered in
 `%LOCALAPPDATA%\wlshare\settings.json`. The password is not, anywhere — a file
 is no place for one — and it is not a command-line argument either, because an
 argument list is in the shell's history and every process listing.
@@ -91,7 +94,9 @@ and returns before the socket is open. Everything after that is:
 - **the session's thread**, which reads the socket, decodes into the
   framebuffer under its lock, and calls the window's wake callback;
 - **the UI thread**, which draws from the framebuffer under the same lock and
-  posts input events to an unbounded channel the session selects on.
+  posts input events to an unbounded channel the session selects on;
+- **the audio thread**, only while the sound is on, which takes the decoded
+  sound under its own lock ([Sound](#sound)).
 
 Neither waits for the other for longer than a memcpy. The wake callback runs on
 the session's thread and must not block, so `Client.cs` has it do one
@@ -177,6 +182,50 @@ the same breath as the text it numbers. Neither direction sends back what the
 other just did: `ClipboardSync` records the sequence number both after offering
 and after writing the desktop's text, and the server keeps a clipboard a client
 set out of its own notifications.
+
+## Sound
+
+wlshare's audio extension carries what the desktop plays as FLAC on the
+connection the pixels use; the wire is `wlshare-rfb`'s `audio` module, built
+with its `decode` feature, and its design is in wlshare's own
+`docs/architecture.md`. It is asked for or not, per connection, by the form's
+**Play the desktop's sound** — `--audio` on the command line. Unticked, the
+pseudo-encoding is not listed and the server never sends a byte of it.
+
+Ticked, the session lists `WLSF` and waits for the empty rectangle that
+announces it; a server without the extension never sends one and the session
+runs silent. The announcement is answered after the update it came in with a
+set-format — signed 16-bit stereo at 48 kHz, the stream's format whatever the
+output device runs at — and an enable, once. Each begin makes a fresh
+`FlacDecoder`, each end drops it, and every frame between is decoded on the
+session's thread as it arrives, into the core's `Playback` buffer. A frame that
+does not decode costs its 20 ms and no more; each decodes on its own.
+
+`AudioOutput` is the other end: a shared-mode WASAPI stream on a thread of its
+own, opened as 48 kHz float stereo with `AUTOCONVERTPCM`, so the audio engine
+converts it to whatever the device mixes at. The device's event wakes the
+thread whenever it has room, and the thread fills exactly that much through
+`wlshare_client_read_audio` — two channel buffers, interleaved into the
+device's — on the device's clock. It is made only once the status says the
+sound is on, so a session without it leaves the audio hardware alone. A new
+default output, reported by an `IMMNotificationClient`, has the thread reopen
+the stream on it; a device that fails or goes away is retried every few
+seconds, or at once when the default changes. It is disposed before the
+`Client` is, since the thread reads from it until it has stopped.
+
+The WASAPI interfaces in `Interop/Wasapi.cs` are source-generated COM
+(`[GeneratedComInterface]`), with every method declared in vtable order whether
+it is called or not, and every interface a call hands back wrapped as a unique
+instance so it can be released the moment the stream is done with it.
+
+The two clocks — the server's capture and the device's — are not one clock,
+and the network is not smooth, so `Playback` has a floor and a ceiling. It
+starts playing only once 60 ms is waiting, and running dry puts it back to
+waiting for that much rather than playing each frame the instant it lands; past
+300 ms the oldest sound is dropped back down to 60, so a stall followed by a
+burst costs a skip rather than a delay that never goes away. Sound shares the
+TCP stream with the pixels, and wlshare sends it ahead of every framebuffer
+update, so a large ZRLE frame delays it by no more than its own transfer.
 
 ## The C ABI
 

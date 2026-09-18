@@ -54,7 +54,7 @@ internal sealed unsafe class Client : IDisposable
 
     public Client(Destination destination, Surface surface, DispatcherQueue queue, Action onChange)
     {
-        _handle = Native.Connect(destination.Host, destination.Port, destination.Username, destination.Password, surface.Width, surface.Height, surface.Scale);
+        _handle = Native.Connect(destination.Host, destination.Port, destination.Username, destination.Password, destination.Audio, surface.Width, surface.Height, surface.Scale);
         _wake = new Wake(queue, onChange);
         _wakeHandle = GCHandle.Alloc(_wake);
         Native.OnFrame(_handle, &OnWake, GCHandle.ToIntPtr(_wakeHandle));
@@ -94,7 +94,9 @@ internal sealed unsafe class Client : IDisposable
 
     public enum State { Connecting, Ready, Closed }
 
-    public readonly record struct Status(State State, uint Width, uint Height, double Scale, string Name, string? Error);
+    /// <summary>Audio is the desktop's sound being on: asked for, and the
+    /// server has it.</summary>
+    public readonly record struct Status(State State, uint Width, uint Height, double Scale, string Name, string? Error, bool Audio);
 
     public Status Read()
     {
@@ -108,7 +110,7 @@ internal sealed unsafe class Client : IDisposable
             _ => State.Connecting,
         };
         var error = String((output, cap) => Native.Error(_handle, output, cap));
-        return new Status(state, raw.Width, raw.Height, raw.Scale, String((output, cap) => Native.Name(_handle, output, cap)), error.Length == 0 ? null : error);
+        return new Status(state, raw.Width, raw.Height, raw.Scale, String((output, cap) => Native.Name(_handle, output, cap)), error.Length == 0 ? null : error, raw.Audio);
     }
 
     private delegate nuint StringReader(byte* output, nuint cap);
@@ -250,6 +252,14 @@ internal sealed unsafe class Client : IDisposable
             box.Thrown = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e);
         }
     }
+
+    // ── Sound ───────────────────────────────────────────────────────────────
+
+    /// <summary>The next <paramref name="frames"/> of the desktop's sound,
+    /// 48 kHz stereo, into two separate channel buffers — silence where there
+    /// is none yet. Called from the audio device's render thread, which is
+    /// stopped before this client is disposed.</summary>
+    public void ReadAudio(float* left, float* right, int frames) => Native.ReadAudio(_handle, left, right, (nuint)frames);
 
     // ── Input ───────────────────────────────────────────────────────────────
 
