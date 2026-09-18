@@ -451,12 +451,16 @@ impl Live {
     /// and as many pixels across as the window has device pixels. Together those
     /// make the framebuffer a device-pixel-for-device-pixel match.
     ///
+    /// A change of density is one `ClientDensity` carrying the size with it,
+    /// which the server applies as one output configuration. A size at an
+    /// unchanged density is a `SetDesktopSize`.
+    ///
     /// **One at a time.** The server applies both through
     /// wlr-output-management, whose configurations carry a serial the
     /// compositor bumps on every commit, so the second of two in flight is
-    /// cancelled and comes back as an invalid layout. The density goes first,
-    /// and while it is in flight the window's latest surface — its size, or a
-    /// density of its own — waits in `held_surface` for the `OutputScale` the
+    /// cancelled and comes back as an invalid layout. While a density is in
+    /// flight the window's latest surface — its size, or a density of its own
+    /// — waits in `held_surface` for the `OutputScale` the
     /// extension promises for every declaration; [`Live::released_by`]
     /// recognises it, and the surface is then asked for as if just posted.
     async fn ask_for<W: AsyncWrite + Unpin>(&mut self, writer: &mut Writer<W>, surface: Surface) -> anyhow::Result<()> {
@@ -470,10 +474,10 @@ impl Live {
         }
         let size = (surface.width, surface.height);
         if self.asked_scale != Some(surface.scale) {
-            writer.send(&client::client_density(surface.scale)).await?;
+            writer.send(&client::client_density(surface.width, surface.height, surface.scale)).await?;
             self.asked_scale = Some(surface.scale);
+            self.asked_size = Some(size);
             self.awaiting_scale = true;
-            self.held_surface = Some(surface);
             return Ok(());
         }
         if self.asked_size != Some(size) {
@@ -702,24 +706,34 @@ mod tests {
     /// has the compositor cancel the second configuration, and the desktop
     /// answers a perfectly good size with *invalid layout*.
     #[tokio::test]
-    async fn a_size_waits_for_the_density_it_goes_with_to_be_answered() {
+    async fn a_density_carries_its_size_and_a_resize_waits_for_its_answer() {
         let mut live = live();
         let mut writer = writer();
         let doubled = Surface { width: 1600, height: 1200, scale: 2.0 };
 
         live.ask_for(&mut writer, doubled).await.unwrap();
-        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { fixed: to_fixed(2.0) }], "the density goes out alone");
-
-        // The OutputScale that answers every SetEncodings, carrying the scale
-        // the desktop is at now. Not the answer, so the size stays held.
-        live.handle(ServerMsg::OutputScale { width: 1024, height: 768, fixed: to_fixed(1.0) }, &mut writer).await.unwrap();
-        assert_eq!(sent(&mut writer), vec![]);
-
-        live.handle(ServerMsg::OutputScale { width: 1024, height: 768, fixed: to_fixed(2.0) }, &mut writer).await.unwrap();
         assert_eq!(
             sent(&mut writer),
-            vec![ClientMsg::SetDesktopSize { width: 1600, height: 1200, screens: vec![Screen::whole(1600, 1200)] }],
+            vec![ClientMsg::ClientDensity { width: 1600, height: 1200, fixed: to_fixed(2.0) }],
+            "the density carries the size, and nothing goes out beside it"
+        );
+
+        // The OutputScale that answers every SetEncodings, carrying the scale
+        // the desktop is at now, is not the answer: a resize still waits.
+        live.handle(ServerMsg::OutputScale { width: 1024, height: 768, fixed: to_fixed(1.0) }, &mut writer).await.unwrap();
+        live.ask_for(&mut writer, Surface { width: 1400, height: 1000, scale: 2.0 }).await.unwrap();
+        assert_eq!(sent(&mut writer), vec![]);
+
+        live.handle(ServerMsg::OutputScale { width: 1600, height: 1200, fixed: to_fixed(2.0) }, &mut writer).await.unwrap();
+        assert_eq!(
+            sent(&mut writer),
+            vec![ClientMsg::SetDesktopSize { width: 1400, height: 1000, screens: vec![Screen::whole(1400, 1000)] }],
             "the answer releases the size"
+        );
+        live.ask_for(&mut writer, doubled).await.unwrap();
+        assert_eq!(
+            sent(&mut writer),
+            vec![ClientMsg::SetDesktopSize { width: 1600, height: 1200, screens: vec![Screen::whole(1600, 1200)] }]
         );
 
         // The same surface again is a window redrawing, not a window changing.
@@ -734,28 +748,22 @@ mod tests {
         );
     }
 
-    /// The window's 1×/2× switch is a density alone: the window has not
-    /// changed size, so nothing but the density goes out, and nothing is held.
+    /// The window's 1×/2× switch is one density and nothing else: the size it
+    /// carries is the one the window already has.
     #[tokio::test]
     async fn switching_between_1x_and_2x_at_one_size_sends_only_the_density() {
         let mut live = live();
         let mut writer = writer();
         live.ask_for(&mut writer, Surface { width: 1600, height: 1000, scale: 1.0 }).await.unwrap();
         live.handle(ServerMsg::OutputScale { width: 1600, height: 1000, fixed: to_fixed(1.0) }, &mut writer).await.unwrap();
-        assert_eq!(
-            sent(&mut writer),
-            vec![
-                ClientMsg::ClientDensity { fixed: to_fixed(1.0) },
-                ClientMsg::SetDesktopSize { width: 1600, height: 1000, screens: vec![Screen::whole(1600, 1000)] },
-            ]
-        );
+        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { width: 1600, height: 1000, fixed: to_fixed(1.0) }]);
 
         live.ask_for(&mut writer, Surface { width: 1600, height: 1000, scale: 2.0 }).await.unwrap();
         live.handle(ServerMsg::OutputScale { width: 1600, height: 1000, fixed: to_fixed(2.0) }, &mut writer).await.unwrap();
-        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { fixed: to_fixed(2.0) }], "the size is already the window's");
+        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { width: 1600, height: 1000, fixed: to_fixed(2.0) }], "one message per switch");
 
         live.ask_for(&mut writer, Surface { width: 1600, height: 1000, scale: 1.0 }).await.unwrap();
-        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { fixed: to_fixed(1.0) }], "and back");
+        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { width: 1600, height: 1000, fixed: to_fixed(1.0) }], "and back");
     }
 
     /// The same one at a time, from the other side: a window that is resized
@@ -767,12 +775,13 @@ mod tests {
         let mut writer = writer();
 
         live.ask_for(&mut writer, Surface { width: 1600, height: 1200, scale: 2.0 }).await.unwrap();
-        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { fixed: to_fixed(2.0) }]);
+        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { width: 1600, height: 1200, fixed: to_fixed(2.0) }]);
 
+        live.ask_for(&mut writer, Surface { width: 1500, height: 1100, scale: 2.0 }).await.unwrap();
         live.ask_for(&mut writer, Surface { width: 1400, height: 1000, scale: 2.0 }).await.unwrap();
         assert_eq!(sent(&mut writer), vec![], "a size at the density still in flight waits with it");
 
-        live.handle(ServerMsg::OutputScale { width: 1024, height: 768, fixed: to_fixed(2.0) }, &mut writer).await.unwrap();
+        live.handle(ServerMsg::OutputScale { width: 1600, height: 1200, fixed: to_fixed(2.0) }, &mut writer).await.unwrap();
         assert_eq!(
             sent(&mut writer),
             vec![ClientMsg::SetDesktopSize { width: 1400, height: 1000, screens: vec![Screen::whole(1400, 1000)] }],
@@ -796,20 +805,20 @@ mod tests {
         let mut writer = writer();
 
         live.ask_for(&mut writer, Surface { width: 1600, height: 1200, scale: 2.0 }).await.unwrap();
-        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { fixed: to_fixed(2.0) }]);
+        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { width: 1600, height: 1200, fixed: to_fixed(2.0) }]);
 
         live.ask_for(&mut writer, Surface { width: 800, height: 600, scale: 1.0 }).await.unwrap();
         assert_eq!(sent(&mut writer), vec![], "one density in flight at a time");
 
-        live.handle(ServerMsg::OutputScale { width: 1024, height: 768, fixed: to_fixed(2.0) }, &mut writer).await.unwrap();
-        assert_eq!(sent(&mut writer), vec![ClientMsg::ClientDensity { fixed: to_fixed(1.0) }], "the latest density follows the answer");
-
-        live.handle(ServerMsg::OutputScale { width: 1024, height: 768, fixed: to_fixed(1.0) }, &mut writer).await.unwrap();
+        live.handle(ServerMsg::OutputScale { width: 1600, height: 1200, fixed: to_fixed(2.0) }, &mut writer).await.unwrap();
         assert_eq!(
             sent(&mut writer),
-            vec![ClientMsg::SetDesktopSize { width: 800, height: 600, screens: vec![Screen::whole(800, 600)] }],
-            "and the size goes with it"
+            vec![ClientMsg::ClientDensity { width: 800, height: 600, fixed: to_fixed(1.0) }],
+            "the latest density follows the answer, with its size"
         );
+
+        live.handle(ServerMsg::OutputScale { width: 800, height: 600, fixed: to_fixed(1.0) }, &mut writer).await.unwrap();
+        assert_eq!(sent(&mut writer), vec![], "and nothing follows it");
     }
 
     #[tokio::test]

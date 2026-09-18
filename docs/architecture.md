@@ -56,13 +56,16 @@ for a density a little more than the screen's. The view hears of a move to
 another screen, or a change to the setting, through `XamlRoot.Changed`, and
 asks again.
 
-The density and the size go to the server one at a time. It applies both
-through wlr-output-management, whose configurations carry a serial the
+A change of density is one `ClientDensity` that carries the size with it, which
+the server applies as one output configuration; a change of size at the same
+density is a `SetDesktopSize`. They go to the server one at a time. It applies
+both through wlr-output-management, whose configurations carry a serial the
 compositor bumps on every commit, so the second of two in flight is cancelled
-and comes back as an invalid layout. The density goes first and the size waits
-for the `OutputScale` that answers it (`Live::ask_for`). A move between a
-150% and a 200% screen is a new size at the same density; a move between a
-100% and a 200% one is both.
+and comes back as an invalid layout. Whatever the window asks for while a
+density is in flight waits for the `OutputScale` that answers it
+(`Live::ask_for`). A move between a 150% and a 200% screen is a new size at the
+same density, a `SetDesktopSize`; a move between a 100% and a 200% one is one
+`ClientDensity`.
 
 ## Where a session begins
 
