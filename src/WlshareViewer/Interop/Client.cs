@@ -205,6 +205,52 @@ internal sealed unsafe class Client : IDisposable
         }
     }
 
+    // ── The clipboard ───────────────────────────────────────────────────────
+
+    /// <summary>The Windows clipboard, for the desktop. The core sends it only
+    /// when the desktop asks for it.</summary>
+    public void SetClipboard(string text)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        fixed (byte* p = bytes)
+        {
+            Native.SetClipboard(_handle, p, (nuint)bytes.Length);
+        }
+    }
+
+    private delegate void ClipboardVisitor(ulong generation, byte* text, nuint length);
+
+    /// <summary>The desktop's clipboard and which arrival it is, if it is not
+    /// the one numbered <paramref name="seen"/> — null when there is nothing
+    /// new.</summary>
+    public (ulong Generation, string Text)? DesktopClipboard(ulong seen)
+    {
+        (ulong, string)? taken = null;
+        ClipboardVisitor visit = (generation, text, length) =>
+        {
+            if (generation != seen && text != null)
+            {
+                taken = (generation, Encoding.UTF8.GetString(text, checked((int)length)));
+            }
+        };
+        Visit(visit, (client, ctx) => Native.WithClipboard(client, &VisitClipboard, ctx));
+        return taken;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void VisitClipboard(nint ctx, ulong generation, byte* text, nuint length)
+    {
+        var box = (Visiting)GCHandle.FromIntPtr(ctx).Target!;
+        try
+        {
+            ((ClipboardVisitor)box.Visit)(generation, text, length);
+        }
+        catch (Exception e)
+        {
+            box.Thrown = System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e);
+        }
+    }
+
     // ── Input ───────────────────────────────────────────────────────────────
 
     public void Pointer(byte buttons, ushort x, ushort y) => Native.Pointer(_handle, buttons, x, y);

@@ -117,6 +117,16 @@ internal static unsafe partial class Native
     [LibraryImport(Dll, EntryPoint = "wlshare_client_surface")]
     internal static partial void Surface(nint client, ushort width, ushort height, double scale);
 
+    // The Windows clipboard, `len` bytes of UTF-8, for the desktop. The core
+    // sends it only when the desktop asks for it.
+    [LibraryImport(Dll, EntryPoint = "wlshare_client_set_clipboard")]
+    internal static partial void SetClipboard(nint client, byte* text, nuint len);
+
+    // The desktop's clipboard, which arrival it is and `len` bytes of UTF-8 —
+    // null and 0 before the desktop has provided any.
+    [LibraryImport(Dll, EntryPoint = "wlshare_client_with_clipboard")]
+    internal static partial void WithClipboard(nint client, delegate* unmanaged[Cdecl]<nint, ulong, byte*, nuint, void> visit, nint ctx);
+
     [LibraryImport(Dll, EntryPoint = "wlshare_client_wheel")]
     internal static partial nuint Wheel(nint client, int delta, [MarshalAs(UnmanagedType.U1)] bool horizontal, byte* output, nuint cap);
 

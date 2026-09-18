@@ -86,6 +86,7 @@ pub struct WlshareCursor {
 pub type WlshareWakeFn = extern "C" fn(ctx: *mut c_void);
 pub type WlshareFrameFn = extern "C" fn(ctx: *mut c_void, frame: *const WlshareFrame);
 pub type WlshareCursorFn = extern "C" fn(ctx: *mut c_void, cursor: *const WlshareCursor);
+pub type WlshareClipboardFn = extern "C" fn(ctx: *mut c_void, generation: u64, text: *const u8, len: usize);
 
 /// A context pointer the app gave us, carried to the thread that calls back
 /// into it. Whether it is safe to use from there is the app's to guarantee —
@@ -323,6 +324,33 @@ pub unsafe extern "C" fn wlshare_client_surface(client: *const Client, width: u1
     }
 }
 
+/// The Windows clipboard, `len` bytes of UTF-8, for the desktop. Bytes that are
+/// not UTF-8 are replaced rather than refused.
+///
+/// # Safety
+/// `client` is live or null, and `text` points at `len` bytes or is null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wlshare_client_set_clipboard(client: *const Client, text: *const u8, len: usize) {
+    let Some(client) = (unsafe { client.as_ref() }) else { return };
+    let bytes = if text.is_null() || len == 0 { &[][..] } else { unsafe { std::slice::from_raw_parts(text, len) } };
+    client.clipboard(String::from_utf8_lossy(bytes).into_owned());
+}
+
+/// Show `visit` the desktop's clipboard: which arrival it is, and `len` bytes
+/// of UTF-8 — null and 0 before the desktop has provided any. The clipboard's
+/// lock is held for the call.
+///
+/// # Safety
+/// As [`wlshare_client_with_frame`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wlshare_client_with_clipboard(client: *const Client, visit: WlshareClipboardFn, ctx: *mut c_void) {
+    let Some(client) = (unsafe { client.as_ref() }) else { return };
+    client.with_clipboard(|generation, text| match text {
+        Some(text) => visit(ctx, generation, text.as_ptr(), text.len()),
+        None => visit(ctx, generation, std::ptr::null(), 0),
+    });
+}
+
 /// The wheel notches a scroll comes to, into `output` as button-mask bits, and how
 /// many there were. `delta` is the pointer's `MouseWheelDelta`, and
 /// `horizontal` says which wheel it came from. A scroll too small for a notch
@@ -379,6 +407,7 @@ mod tests {
             wlshare_client_pointer(std::ptr::null(), 1, 2, 3);
             wlshare_client_key(std::ptr::null(), true, 0x61);
             wlshare_client_surface(std::ptr::null(), 800, 600, 2.0);
+            wlshare_client_set_clipboard(std::ptr::null(), c"画面".as_ptr().cast(), "画面".len());
             assert_eq!(wlshare_client_wheel(std::ptr::null(), 120, false, notches.as_mut_ptr(), notches.len()), 0);
             assert_eq!(wlshare_client_error(std::ptr::null(), std::ptr::null_mut(), 0), 0);
             wlshare_client_close(std::ptr::null_mut());

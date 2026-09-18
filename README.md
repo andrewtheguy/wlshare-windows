@@ -4,14 +4,15 @@ A native Windows client for the [`wlshare`](https://github.com/andrewtheguy/wlsh
 VNC server: a WinUI 3 window drawing a Win2D canvas, over a Rust core that
 speaks the whole RFB session.
 
-**Scope:** the screen, the keyboard and the pointer. The desktop is asked to be
+**Scope:** the screen, the keyboard, the pointer and the clipboard. The desktop is asked to be
 exactly the window's size in device pixels, so what is on screen is one device
 pixel per desktop pixel and never resampled, and it is drawn at **1×** or
 **2×** to match the panel the window is on: 2× on one of 180 pixels per inch or
 more — a panel made for 2×, as a Mac's Retina ones are — and 1× below that,
 whatever Windows' scale setting is. Moving the window to another screen switches
-it. The clipboard, the sound, the camera, the microphone and
-picking an output are wlshare extensions this client does not speak yet.
+it. The clipboard is text, both ways, as UTF-8. The sound, the camera, the
+microphone and picking an output are wlshare extensions this client does not
+speak yet.
 
 Windows 10 1809 or later, x64.
 

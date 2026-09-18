@@ -6,7 +6,8 @@ namespace WlshareViewer.Interop;
 
 /// <summary>
 /// The few things WinUI does not say and Win32 does: what character a key
-/// types, and a pointer shape made from pixels.
+/// types, a pointer shape made from pixels, and the clipboard as it is at this
+/// moment rather than when an async call gets round to it.
 /// </summary>
 internal static unsafe partial class Win32
 {
@@ -72,6 +73,149 @@ internal static unsafe partial class Win32
 
     [LibraryImport("user32.dll")]
     private static partial int ToUnicodeEx(uint vk, uint scan, byte* state, char* buffer, int size, uint flags, nint layout);
+
+    // ── The clipboard ───────────────────────────────────────────────────────
+
+    private const uint CfUnicodeText = 13;
+    private const uint GmemMoveable = 0x2;
+
+    /// <summary>A number that moves whenever anything on the machine changes
+    /// the clipboard, this app included.</summary>
+    [LibraryImport("user32.dll")]
+    public static partial uint GetClipboardSequenceNumber();
+
+    /// <summary>The clipboard's text, or null for a clipboard with none — or
+    /// one another process is holding open.</summary>
+    public static string? ClipboardText(nint window)
+    {
+        if (!OpenClipboardPatiently(window))
+        {
+            return null;
+        }
+        try
+        {
+            var data = GetClipboardData(CfUnicodeText);
+            if (data == 0)
+            {
+                return null;
+            }
+            var chars = (char*)GlobalLock(data);
+            if (chars == null)
+            {
+                return null;
+            }
+            try
+            {
+                // Up to the NUL, and never past the end of the block for a
+                // text that has none.
+                var text = new ReadOnlySpan<char>(chars, checked((int)(GlobalSize(data) / sizeof(char))));
+                var end = text.IndexOf('\0');
+                return new string(end < 0 ? text : text[..end]);
+            }
+            finally
+            {
+                GlobalUnlock(data);
+            }
+        }
+        finally
+        {
+            CloseClipboard();
+        }
+    }
+
+    /// <summary>Put text on the clipboard in place of whatever was there, and
+    /// say whether it went.</summary>
+    public static bool SetClipboardText(nint window, string text)
+    {
+        var bytes = (nuint)((text.Length + 1) * sizeof(char));
+        var block = GlobalAlloc(GmemMoveable, bytes);
+        if (block == 0)
+        {
+            return false;
+        }
+        var chars = (char*)GlobalLock(block);
+        if (chars == null)
+        {
+            GlobalFree(block);
+            return false;
+        }
+        text.AsSpan().CopyTo(new Span<char>(chars, text.Length));
+        chars[text.Length] = '\0';
+        GlobalUnlock(block);
+
+        // Opened with the window, not null: a clipboard emptied by nobody has
+        // no owner, and SetClipboardData then fails.
+        if (!OpenClipboardPatiently(window))
+        {
+            GlobalFree(block);
+            return false;
+        }
+        try
+        {
+            EmptyClipboard();
+            // The clipboard owns the block once this succeeds, and only then.
+            if (SetClipboardData(CfUnicodeText, block) == 0)
+            {
+                GlobalFree(block);
+                return false;
+            }
+            return true;
+        }
+        finally
+        {
+            CloseClipboard();
+        }
+    }
+
+    /// <summary>The clipboard is one lock for the whole machine, and whoever
+    /// last changed it is often still holding it — a clipboard manager reading
+    /// what was just copied. A few tries, briefly, then give up.</summary>
+    private static bool OpenClipboardPatiently(nint window)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            if (OpenClipboard(window))
+            {
+                return true;
+            }
+            Thread.Sleep(10);
+        }
+        return false;
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool OpenClipboard(nint window);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CloseClipboard();
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool EmptyClipboard();
+
+    [LibraryImport("user32.dll")]
+    private static partial nint GetClipboardData(uint format);
+
+    [LibraryImport("user32.dll")]
+    private static partial nint SetClipboardData(uint format, nint memory);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial nint GlobalAlloc(uint flags, nuint bytes);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial nint GlobalFree(nint memory);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial void* GlobalLock(nint memory);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GlobalUnlock(nint memory);
+
+    [LibraryImport("kernel32.dll")]
+    private static partial nuint GlobalSize(nint memory);
 
     // ── Pointer shapes ──────────────────────────────────────────────────────
 
