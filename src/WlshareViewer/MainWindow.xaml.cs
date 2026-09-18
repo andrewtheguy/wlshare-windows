@@ -30,12 +30,17 @@ internal sealed partial class MainWindow : Window
         // for its callbacks to have reached.
         Closed += (_, _) => EndSession();
         // The moments the window becomes the one in use, which is when the
-        // Windows clipboard is offered to the desktop.
+        // Windows clipboard is offered to the desktop — and when a desktop
+        // clipboard that could not be written, the Windows one being held by
+        // another process, is tried again without waiting for the next wake.
+        // Offered first, so what was copied here reaches the desktop before
+        // anything older from it lands on top.
         Activated += (_, e) =>
         {
             if (e.WindowActivationState != WindowActivationState.Deactivated)
             {
                 _clipboard?.Offer();
+                _clipboard?.Take();
             }
         };
 
