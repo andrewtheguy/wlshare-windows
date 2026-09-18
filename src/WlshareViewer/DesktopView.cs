@@ -115,10 +115,10 @@ internal sealed unsafe partial class DesktopView : UserControl
     /// <summary>The desktop is drawn at 1× or 2×, and the panel's own pixels
     /// per inch say which — not Windows' scale setting, which is a preference.
     /// 2× is for a panel made for it, as a Mac's Retina ones are at 218 and
-    /// up; one of 192 (twice 96) or more is dense enough, and anything less,
-    /// or a screen that does not say how big it is, is 1×. There is no
+    /// up; one of 180 or more — a 24" 4K — is dense enough, and anything
+    /// less, or a screen that does not say how big it is, is 1×. There is no
     /// switch.</summary>
-    private static double DesktopScale(double? pixelsPerInch) => pixelsPerInch >= 192 ? 2 : 1;
+    private static double DesktopScale(double? pixelsPerInch) => pixelsPerInch >= 180 ? 2 : 1;
 
     /// <summary>Follow a root and the window it is in: a change to the scale
     /// setting is a new rasterization scale, and a move to another screen may

@@ -51,8 +51,8 @@ The density follows the panel, as the Mac client's follows its display's
 backing scale, and there is no switch. It is the panel's physical pixels per
 inch — `GetDpiForMonitor`'s raw DPI, which Windows takes from the monitor's
 EDID (`Screen.PixelsPerInch`) — and not Windows' scale setting, which is a
-preference: 192 (twice 96) and up is a panel made for 2×, as a Mac's Retina
-ones are at 218 and up, and anything less, or a screen with no size, is 1×
+preference: 180 and up — a 24" 4K — is a panel made for 2×, as a Mac's
+Retina ones are at 218 and up, and anything less, or a screen with no size, is 1×
 (`DesktopView.DesktopScale`). A ~166 PPI laptop at 150% is 1×, and its
 desktop is laid out at the panel's own pixels. The view asks again when the
 window moves (`AppWindow.Changed`), which is how it hears of another screen,
@@ -65,7 +65,7 @@ both through wlr-output-management, whose configurations carry a serial the
 compositor bumps on every commit, so the second of two in flight is cancelled
 and comes back as an invalid layout. Whatever the window asks for while a
 density is in flight waits for the `OutputScale` that answers it
-(`Live::ask_for`). A move between two panels on the same side of 192 PPI is at
+(`Live::ask_for`). A move between two panels on the same side of 180 PPI is at
 most a new size at the same density, a `SetDesktopSize`; a move across it is
 one `ClientDensity`.
 
