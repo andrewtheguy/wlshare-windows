@@ -23,9 +23,6 @@ namespace WlshareViewer;
 /// </summary>
 internal sealed unsafe partial class AudioOutput : IDisposable
 {
-    /// <summary>How much the device buffers ahead of what it plays, in 100 ns
-    /// units: 20 ms, on top of the core's own floor.</summary>
-    private const long BufferDuration = 200_000;
     /// <summary>A device that asked for more and has not in this long is one
     /// that has stopped, and is opened again.</summary>
     private const int Silence = 2000;
@@ -126,10 +123,12 @@ internal sealed unsafe partial class AudioOutput : IDisposable
             device = Wasapi.Wrap<IMMDevice>(endpoint);
             audio = Wasapi.Activate(device);
             var format = Wasapi.Float48kStereo;
+            // An event-driven shared stream takes no durations of its own: the
+            // engine sizes the buffer, and the core's floor is the headroom.
             Wasapi.Check(audio.Initialize(
                 Wasapi.ShareModeShared,
                 Wasapi.StreamFlagsEventCallback | Wasapi.StreamFlagsAutoConvertPcm | Wasapi.StreamFlagsSrcDefaultQuality,
-                BufferDuration,
+                0,
                 0,
                 &format,
                 null));
