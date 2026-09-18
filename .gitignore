@@ -1,0 +1,20 @@
+# Rust
+/core/target
+/target
+
+# The core DLL build-core.ps1 stages, and the packaging output
+/dist
+/build
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# MSI output
+*.msi
+*.wixpdb
+
+/tmp
+CLAUDE.local.md
