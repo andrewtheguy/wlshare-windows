@@ -1,0 +1,44 @@
+[package]
+name = "wlshare-client-core"
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/andrewtheguy/wlshare-windows"
+description = "The wlshare client's session, framebuffer and C ABI, under the Windows app"
+
+# `cdylib` is what the app P/Invokes — .NET loads native code only out of a
+# DLL at run time, so there is no static library to link the way the macOS app
+# links its core. `rlib` is what the tests build against.
+[lib]
+name = "wlshare_client_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Every protocol byte, from the release this client was built and tested
+# against — not the sibling checkout, so what is built here is the same wire on
+# this machine, on the CI VM and on one that has never heard of `../wlshare`.
+# Cargo.lock holds the revision the tag stood for.
+#
+# To build against an unreleased change, point it at the checkout for as long
+# as that takes, without committing anything:
+#
+#   cargo test --config 'patch."https://github.com/andrewtheguy/wlshare.git".wlshare-rfb.path="../../wlshare/crates/wlshare-rfb"'
+#
+# That rewrites Cargo.lock while it is in force, so put the pinned one back
+# (`git checkout core/Cargo.lock`) before committing anything.
+wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.25" }
+anyhow = "1"
+log = "0.4"
+tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "sync", "time", "macros"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "net", "time"] }
+# The live tests talk to a real server; `RUST_LOG=debug` is how one says what it
+# sent when it did not send what was expected.
+env_logger = "0.11"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
+panic = "abort"

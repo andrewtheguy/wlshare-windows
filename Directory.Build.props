@@ -1,0 +1,12 @@
+<Project>
+
+  <!-- The one place the app's version is written. It is stamped into the
+       WlshareViewer assembly (and so into the .exe's file version, which is
+       what scripts\package-windows.ps1 reads back to name the release) and it
+       is the MSI's ProductVersion. MSI compares the first three fields, so a
+       plain major.minor.patch keeps MajorUpgrade working. -->
+  <PropertyGroup>
+    <WlshareAppVersion Condition="'$(WlshareAppVersion)' == ''">0.0.1</WlshareAppVersion>
+  </PropertyGroup>
+
+</Project>
