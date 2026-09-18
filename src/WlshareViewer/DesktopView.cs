@@ -4,6 +4,7 @@ using Microsoft.Graphics.Canvas.UI;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI;
 using Microsoft.UI.Input;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -19,8 +20,8 @@ namespace WlshareViewer;
 /// It draws only when it is told to: a remote desktop that has not changed has
 /// nothing to redraw, and the window calls <see cref="Refresh"/> when the core
 /// says it has. Its size in device pixels, at the scale that follows the
-/// screen's, is what the desktop is asked to be, so at rest the picture is one
-/// device pixel per framebuffer pixel and never resampled.
+/// screen's pixel density, is what the desktop is asked to be, so at rest the
+/// picture is one device pixel per framebuffer pixel and never resampled.
 /// </summary>
 internal sealed unsafe partial class DesktopView : UserControl
 {
@@ -52,8 +53,11 @@ internal sealed unsafe partial class DesktopView : UserControl
     private nint _cursorHandle;
 
     private Client.Surface _surface;
-    /// <summary>The root whose changes this view follows, while it is loaded.</summary>
+    /// <summary>The root whose changes this view follows, while it is loaded,
+    /// and the window it is in, whose moves it follows too.</summary>
     private XamlRoot? _root;
+    private AppWindow? _appWindow;
+    private nint _window;
 
     public DesktopView()
     {
@@ -76,30 +80,12 @@ internal sealed unsafe partial class DesktopView : UserControl
         SizeChanged += (_, _) => PostSurface();
         Loaded += (_, _) =>
         {
-            // A move to another screen, or a change to the scale setting, is a
-            // new density and maybe a new desktop scale. Loaded can come more
-            // than once, and the root is subscribed to once.
-            if (_root != XamlRoot)
-            {
-                if (_root is not null)
-                {
-                    _root.Changed -= OnRootChanged;
-                }
-                _root = XamlRoot;
-                if (_root is not null)
-                {
-                    _root.Changed += OnRootChanged;
-                }
-            }
+            Follow(XamlRoot);
             PostSurface();
         };
         Unloaded += (_, _) =>
         {
-            if (_root is not null)
-            {
-                _root.Changed -= OnRootChanged;
-                _root = null;
-            }
+            Follow(null);
             ReleaseHeld();
         };
 
@@ -114,22 +100,60 @@ internal sealed unsafe partial class DesktopView : UserControl
     }
 
     /// <summary>What the desktop is asked to be: this view's size in device
-    /// pixels, at the scale that goes with the screen's.</summary>
+    /// pixels, at the scale that goes with the screen's pixel density.</summary>
     public Client.Surface Surface
     {
         get
         {
             var density = XamlRoot?.RasterizationScale ?? 1;
             static ushort Pixels(double value) => (ushort)Math.Clamp(Math.Round(value), 0, ushort.MaxValue);
-            return new Client.Surface(Pixels(ActualWidth * density), Pixels(ActualHeight * density), DesktopScale(density));
+            var perInch = _window == 0 ? null : Screen.PixelsPerInch(_window);
+            return new Client.Surface(Pixels(ActualWidth * density), Pixels(ActualHeight * density), DesktopScale(perInch));
         }
     }
 
-    /// <summary>The desktop is drawn at 1× or 2×, and the screen's scale
-    /// setting says which: 150% and up is a screen dense enough for 2×, and
-    /// 125% is closer to 1×. The Mac client takes its display's backing scale
-    /// the same way, and there is no switch.</summary>
-    private static double DesktopScale(double density) => density >= 1.5 ? 2 : 1;
+    /// <summary>The desktop is drawn at 1× or 2×, and the panel's own pixels
+    /// per inch say which — not Windows' scale setting, which is a preference.
+    /// 2× is for a panel made for it, as a Mac's Retina ones are at 218 and
+    /// up; one of 192 (twice 96) or more is dense enough, and anything less,
+    /// or a screen that does not say how big it is, is 1×. There is no
+    /// switch.</summary>
+    private static double DesktopScale(double? pixelsPerInch) => pixelsPerInch >= 192 ? 2 : 1;
+
+    /// <summary>Follow a root and the window it is in: a change to the scale
+    /// setting is a new rasterization scale, and a move to another screen may
+    /// be that or a new pixel density, which only the window's position says.
+    /// Loaded can come more than once, and each is subscribed to once.</summary>
+    private void Follow(XamlRoot? root)
+    {
+        if (_root == root)
+        {
+            return;
+        }
+        if (_root is not null)
+        {
+            _root.Changed -= OnRootChanged;
+        }
+        if (_appWindow is not null)
+        {
+            _appWindow.Changed -= OnWindowChanged;
+        }
+        _root = root;
+        _appWindow = null;
+        _window = 0;
+        if (root is null)
+        {
+            return;
+        }
+        root.Changed += OnRootChanged;
+        var id = root.ContentIslandEnvironment.AppWindowId;
+        _window = Win32Interop.GetWindowFromWindowId(id);
+        _appWindow = AppWindow.GetFromWindowId(id);
+        if (_appWindow is not null)
+        {
+            _appWindow.Changed += OnWindowChanged;
+        }
+    }
 
     public void Attach(Client client)
     {
@@ -162,6 +186,14 @@ internal sealed unsafe partial class DesktopView : UserControl
     }
 
     private void OnRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) => PostSurface();
+
+    private void OnWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (args.DidPositionChange)
+        {
+            PostSurface();
+        }
+    }
 
     /// <summary>Tell the session what this view is now. Posting the same one
     /// twice is free — the session drops it.</summary>

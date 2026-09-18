@@ -47,14 +47,16 @@ pixel and nothing is resampled. The other half is the *density* the desktop is
 drawn at, through the density extension: at 1× a 1600-pixel-wide window is a
 1600-point desktop, at 2× it is an 800-point desktop drawn twice as finely.
 
-The density follows the screen, as the Mac client's follows its display's
-backing scale, and there is no switch. Windows' scale setting comes in steps —
-100%, 125%, 150%, 175%, 200% and on — and the desktop has two, so 150% and
-up is 2× and anything less is 1× (`DesktopView.DesktopScale`). A 150% screen
-at 2× is still a device pixel per framebuffer pixel; its desktop is laid out
-for a density a little more than the screen's. The view hears of a move to
-another screen, or a change to the setting, through `XamlRoot.Changed`, and
-asks again.
+The density follows the panel, as the Mac client's follows its display's
+backing scale, and there is no switch. It is the panel's physical pixels per
+inch — `GetDpiForMonitor`'s raw DPI, which Windows takes from the monitor's
+EDID (`Screen.PixelsPerInch`) — and not Windows' scale setting, which is a
+preference: 192 (twice 96) and up is a panel made for 2×, as a Mac's Retina
+ones are at 218 and up, and anything less, or a screen with no size, is 1×
+(`DesktopView.DesktopScale`). A ~166 PPI laptop at 150% is 1×, and its
+desktop is laid out at the panel's own pixels. The view asks again when the
+window moves (`AppWindow.Changed`), which is how it hears of another screen,
+and when the rasterization scale changes (`XamlRoot.Changed`).
 
 A change of density is one `ClientDensity` that carries the size with it, which
 the server applies as one output configuration; a change of size at the same
@@ -63,9 +65,9 @@ both through wlr-output-management, whose configurations carry a serial the
 compositor bumps on every commit, so the second of two in flight is cancelled
 and comes back as an invalid layout. Whatever the window asks for while a
 density is in flight waits for the `OutputScale` that answers it
-(`Live::ask_for`). A move between a 150% and a 200% screen is a new size at the
-same density, a `SetDesktopSize`; a move between a 100% and a 200% one is one
-`ClientDensity`.
+(`Live::ask_for`). A move between two panels on the same side of 192 PPI is at
+most a new size at the same density, a `SetDesktopSize`; a move across it is
+one `ClientDensity`.
 
 ## Where a session begins
 
