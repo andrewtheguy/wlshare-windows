@@ -1,0 +1,76 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>WlshareViewer</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version Condition="'$(Version)' == ''">$(WlshareAppVersion)</Version>
+    <!-- x64 only: the core DLL is built for one target (build-core.ps1), and a
+         DLL of the wrong architecture fails to load with a message that says
+         nothing about why. -->
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- The interop reads the core's structs through the pointers its callbacks
+         are handed, and passes function pointers to it. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Unpackaged (no MSIX): the app is delivered by a plain MSI, and this
+         turns on the Windows App SDK's auto-initializer so no runtime install
+         is needed. -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <!-- The .exe's own icon (taskbar, Alt-Tab, Explorer). Generated from
+         icon\AppIcon.svg by scripts\make-icon.sh. -->
+    <ApplicationIcon>Assets\wlshare.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+    <!-- The desktop is drawn with Win2D: one bitmap the framebuffer's damage is
+         uploaded into, drawn a device pixel to a framebuffer pixel. -->
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+  </ItemGroup>
+
+  <!-- Beside the .exe, for the window's title-bar icon (AppWindow.SetIcon). -->
+  <ItemGroup>
+    <Content Include="Assets\wlshare.ico" Link="wlshare.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- The Rust core, which build-core.ps1 leaves in dist\. It is P/Invoked, so
+       it is resolved at run time and nothing needs it to compile: a build
+       without it warns, and the app says what is missing when it starts. A
+       publish is what ships, so a publish without it is an error. -->
+  <PropertyGroup>
+    <CoreDll>$(MSBuildThisFileDirectory)..\..\dist\wlshare_client_core.dll</CoreDll>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(CoreDll)')">
+    <Content Include="$(CoreDll)" Link="wlshare_client_core.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+  <Target Name="WarnWithoutCore" BeforeTargets="Build" Condition="!Exists('$(CoreDll)')">
+    <Warning Text="No core DLL at $(CoreDll): run build-core.ps1 first. The app builds, and will not start." />
+  </Target>
+  <Target Name="RequireCoreForPublish" BeforeTargets="Publish">
+    <Error Condition="!Exists('$(CoreDll)')" Text="No core DLL at $(CoreDll): run build-core.ps1 before publishing." />
+  </Target>
+
+  <!-- `dotnet publish` for an unpackaged WinUI 3 app drops the app's resource
+       index (WlshareViewer.pri): it stays in the build output and is never
+       added to the publish set, and without it WinUI cannot resolve its XAML
+       resources and the app dies at startup before any window appears. -->
+  <Target Name="CopyAppPriToPublish" AfterTargets="Publish" Condition="Exists('$(ProjectPriFullPath)')">
+    <Copy SourceFiles="$(ProjectPriFullPath)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

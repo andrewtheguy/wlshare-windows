@@ -1,0 +1,29 @@
+<!-- WiX 5 (not 6/7): v6+ require accepting the paid Open Source Maintenance Fee
+     EULA at build time; v5 is unencumbered and sufficient here. -->
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputName>wlshare</OutputName>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <!-- ICE03: multi-language files in the harvested Windows App SDK payload
+         report a Language id ICE rejects; harmless for install. -->
+    <SuppressIces>ICE03</SuppressIces>
+    <!-- The app's version (Directory.Build.props), which is also what the
+         Add/Remove Programs entry shows: one number, not a build timestamp and
+         a display version beside it. -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">$(WlshareAppVersion)</ProductVersion>
+    <!-- The published, self-contained app with the core DLL beside it.
+         scripts\package-windows.ps1 publishes there before building this. -->
+    <PublishDir Condition="'$(PublishDir)' == ''">$(MSBuildProjectDirectory)\..\build\publish</PublishDir>
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Before the Files harvest in Product.wxs: an MSI without the core would
+       install an app that cannot start. -->
+  <Target Name="RequireCore" BeforeTargets="Build">
+    <Error Condition="!Exists('$(PublishDir)\wlshare_client_core.dll')"
+           Text="wlshare_client_core.dll is missing from $(PublishDir). Publish the app (scripts\package-windows.ps1) before building the MSI." />
+  </Target>
+
+</Project>

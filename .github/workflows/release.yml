@@ -1,0 +1,98 @@
+name: Release the Windows app
+
+# Builds the app exactly as scripts/package-windows.ps1 builds it on a Windows
+# machine, wraps it in an MSI and publishes that as the GitHub release
+# v<version>, where the version is the published .exe's product version —
+# Directory.Build.props's WlshareAppVersion. Run it by hand; bump the version
+# first. A run on any branch other than main is marked a prerelease.
+#
+# Nothing here is signed: there is no certificate in this repo's secrets, and
+# the README tells people how to get past SmartScreen.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release at a time. Two runs would race over the same draft, the same
+# version check and the same tag; queued rather than cancelled, because a run
+# that is already uploading an installer has nothing to gain from being killed.
+concurrency:
+  group: release-the-windows-app
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # One job on one machine: the core, the app, the MSI and the release are a
+    # single chain, and there is one artifact at the end of it.
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Package the app
+        # Writes dist/package/: the MSI, SHA256SUMS and VERSION.
+        shell: pwsh
+        run: scripts/package-windows.ps1
+
+      - name: Determine and validate the version
+        id: version
+        # After the build rather than before it: the version comes from the
+        # .exe that was just published, so a tag that already exists costs one
+        # wasted build — and a tag is still only created when the release is
+        # published, at the end.
+        shell: pwsh
+        run: |
+          $version = (Get-Content dist/package/VERSION -Raw).Trim()
+          if ($version -notmatch '^[0-9]+(\.[0-9]+){1,2}$') {
+            Write-Output "::error::invalid product version: $version"
+            exit 1
+          }
+          $tag = "v$version"
+          Write-Output "Release tag: $tag"
+          $prerelease = if ($env:GITHUB_REF_NAME -eq 'main') { 'false' } else { 'true' }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "is_prerelease=$prerelease" >> $env:GITHUB_OUTPUT
+
+      - name: Abort if the tag already exists
+        shell: pwsh
+        run: |
+          if (git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}") {
+            Write-Output "::error::Tag ${{ steps.version.outputs.tag }} already exists on remote. Bump WlshareAppVersion in Directory.Build.props first."
+            exit 1
+          }
+
+      - name: Create the draft release
+        shell: pwsh
+        run: |
+          # A draft does not create the tag, so a draft left behind by a failed
+          # run is the one thing that can collide here; real tags are caught
+          # above.
+          $draft = gh release view "${{ steps.version.outputs.tag }}" --json isDraft --jq '.isDraft' 2>$null
+          if ($draft -eq 'true') {
+            Write-Output "Deleting stale draft release ${{ steps.version.outputs.tag }}"
+            gh release delete "${{ steps.version.outputs.tag }}" --yes
+          }
+          $flags = @('--draft', '--target', '${{ github.sha }}', '--title', '${{ steps.version.outputs.tag }}', '--generate-notes')
+          if ('${{ steps.version.outputs.is_prerelease }}' -eq 'true') { $flags += '--prerelease' }
+          gh release create "${{ steps.version.outputs.tag }}" @flags
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload the MSI to the draft release
+        shell: pwsh
+        run: gh release upload "${{ steps.version.outputs.tag }}" dist/package/WlshareViewer-windows-x64.msi dist/package/SHA256SUMS
+
+      - name: Publish the release (removes the draft, creates the tag)
+        shell: pwsh
+        run: gh release edit "${{ steps.version.outputs.tag }}" --draft=false
