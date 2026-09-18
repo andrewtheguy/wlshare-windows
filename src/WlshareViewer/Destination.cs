@@ -7,9 +7,9 @@ namespace WlshareViewer;
 /// <summary>
 /// A desktop to connect to, and what is remembered about it between launches.
 ///
-/// The host, the port and the user name are remembered, in
-/// %LOCALAPPDATA%\wlshare\settings.json. The password is not: it is typed into
-/// the form each time, and a file is no place for one.
+/// The host, the port, the user name and whether to play the desktop's sound
+/// are remembered, in %LOCALAPPDATA%\wlshare\settings.json. The password is
+/// not: it is typed into the form each time, and a file is no place for one.
 /// </summary>
 internal sealed record Destination
 {
@@ -18,14 +18,18 @@ internal sealed record Destination
     public string Username { get; init; } = "";
     [JsonIgnore]
     public string Password { get; init; } = "";
+    /// <summary>Ask for the desktop's sound. A server without it gives none
+    /// either way.</summary>
+    public bool Audio { get; init; }
 
     public string Label => Host.Contains(':') ? $"[{Host}]:{Port}" : $"{Host}:{Port}";
 
     /// <summary>
     /// The command line, for a launch that came from a shell:
     ///
-    ///     WlshareViewer.exe --server 192.168.1.10:5900 --username me
+    ///     WlshareViewer.exe --server 192.168.1.10:5900 --username me --audio
     ///
+    /// --audio is the form's sound checkbox; without it the session is silent.
     /// Null when no --server was given, which is every launch from the Start
     /// menu — those get the form. There is no password argument: an argument
     /// list is in the shell's history and in every process listing. A launch
@@ -52,6 +56,7 @@ internal sealed record Destination
             Port = port,
             Username = Value("--username") ?? "",
             Password = "",
+            Audio = args.Contains("--audio"),
         };
     }
 

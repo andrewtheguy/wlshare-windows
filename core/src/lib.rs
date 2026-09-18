@@ -12,11 +12,17 @@
 //! to [`Client::on_frame`] and reads the pixels through [`Client::with_frame`],
 //! which holds the framebuffer's lock for exactly as long as the upload takes.
 //!
+//! The desktop's sound, when the window asked for it, is decoded into a
+//! buffer the Windows audio device takes from through [`Client::read_audio`],
+//! on its own clock.
+//!
 //! **Scope.** The screen, the keyboard, the pointer, the desktop's scale — 1×
-//! or 2×, chosen by the window — and the clipboard, as text both ways. The
-//! sound, the camera, the microphone and picking an output are wlshare
-//! extensions this client does not list, so the server never sends them.
+//! or 2×, chosen by the window — the clipboard, as text both ways, and the
+//! desktop's sound. The camera, the microphone and picking an output are
+//! wlshare extensions this client does not list, so the server never sends
+//! them.
 
+pub mod audio;
 pub mod framebuffer;
 pub mod keysym;
 pub mod session;
@@ -151,6 +157,14 @@ impl Client {
         visit(clipboard.0, clipboard.1.as_deref())
     }
 
+    /// The next of the desktop's sound, as 48 kHz stereo into `left` and
+    /// `right`, which are the same length — silence where there is none yet.
+    /// Called from the audio device's own thread; the lock is held for the
+    /// copy and nothing else.
+    pub fn read_audio(&self, left: &mut [f32], right: &mut [f32]) {
+        self.shared.audio.lock().unwrap().read(left, right);
+    }
+
     /// The wheel notches a scroll comes to ([`Wheel::scroll`]), gathered across
     /// events. Each is a button the caller clicks — press with the buttons it
     /// already holds, then release.
@@ -183,7 +197,7 @@ mod tests {
     fn nowhere() -> Config {
         // Port 0 never connects, which is the point: the session must fail into
         // the status rather than take the thread down with it.
-        Config { host: "127.0.0.1".to_owned(), port: 0, username: String::new(), password: String::new() }
+        Config { host: "127.0.0.1".to_owned(), port: 0, username: String::new(), password: String::new(), audio: false }
     }
 
     #[test]
@@ -239,7 +253,7 @@ mod tests {
         // session is left waiting for the server's version.
         let accept = std::thread::spawn(move || listener.accept().expect("the client's connection").0);
 
-        let config = Config { host: "127.0.0.1".to_owned(), port, username: String::new(), password: String::new() };
+        let config = Config { host: "127.0.0.1".to_owned(), port, username: String::new(), password: String::new(), audio: false };
         let client = Client::connect(config, Surface { width: 800, height: 600, scale: 2.0 });
         let _socket = accept.join().expect("the accepting thread");
 
@@ -256,7 +270,7 @@ mod tests {
         let client = Client::connect(nowhere(), Surface { width: 800, height: 600, scale: 2.0 });
         client.shared.framebuffer.lock().unwrap().resize(64, 48).unwrap();
 
-        let mut status = ffi::WlshareStatus { state: 0, width: 0, height: 0, scale: 0.0 };
+        let mut status = ffi::WlshareStatus { state: 0, width: 0, height: 0, scale: 0.0, audio: false };
         unsafe { ffi::wlshare_client_status(&raw const client, &raw mut status) };
         assert_eq!((status.width, status.height), (64, 48));
 

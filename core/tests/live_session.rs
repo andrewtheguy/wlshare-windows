@@ -1,6 +1,6 @@
 //! A session against a real wlshare, which no unit test can stand in for: the
-//! handshake, the ZRLE stream, the cursor, the density extension and the
-//! clipboard all only exist between two processes.
+//! handshake, the ZRLE stream, the cursor, the density extension, the
+//! clipboard and the sound all only exist between two processes.
 //!
 //! Ignored by default and pointed at `WLSHARE_TEST_SERVER`, or `127.0.0.1:5900`,
 //! as `WLSHARE_TEST_USERNAME` with `WLSHARE_TEST_PASSWORD`, or unauthenticated
@@ -39,11 +39,15 @@ fn until<T>(what: &str, mut done: impl FnMut() -> Option<T>) -> T {
 }
 
 fn connect(surface: Surface) -> Client {
+    connect_with(surface, false)
+}
+
+fn connect_with(surface: Surface, audio: bool) -> Client {
     let _ = env_logger::builder().is_test(false).try_init();
     let (host, port) = server();
     let username = std::env::var("WLSHARE_TEST_USERNAME").unwrap_or_default();
     let password = std::env::var("WLSHARE_TEST_PASSWORD").unwrap_or_default();
-    let client = Client::connect(Config { host, port, username, password }, surface);
+    let client = Client::connect(Config { host, port, username, password, audio }, surface);
     until("the handshake", || match client.status() {
         status if status.state == State::Ready => Some(()),
         status if status.state == State::Closed => panic!("the session ended: {:?}", status.error),
@@ -169,4 +173,34 @@ fn a_clipboard_given_by_one_window_reaches_another_through_the_desktop() {
     until("the clipboard on the other session", || {
         taker.with_clipboard(|generation, arrived| (generation != seen && arrived == Some(text.as_str())).then_some(()))
     });
+}
+
+/// Asked for, the server's sound is turned on and its frames decode: its
+/// capture runs whether the desktop plays anything or not, so a silent desktop
+/// still sends a frame every 20 ms.
+#[test]
+#[ignore = "needs a wlshare server; see the module comment"]
+fn sound_asked_for_is_turned_on_and_decodes() {
+    let client = connect_with(Surface { width: 1024, height: 768, scale: 1.0 }, true);
+    until("the sound turned on", || client.status().audio.then_some(()));
+    let sound = until("a second of decoded sound", || {
+        let sound = client.status().sound;
+        (sound >= 50).then_some(sound)
+    });
+    println!("{sound} FLAC frames decoded");
+
+    let (mut left, mut right) = (vec![9.0; 480], vec![9.0; 480]);
+    client.read_audio(&mut left, &mut right);
+    assert!(left.iter().chain(&right).all(|s| (-1.0..1.0).contains(s)), "samples, not what was there before");
+}
+
+/// Not asked for, the sound stays off however long the session runs.
+#[test]
+#[ignore = "needs a wlshare server; see the module comment"]
+fn sound_not_asked_for_stays_off() {
+    let client = connect(Surface { width: 1024, height: 768, scale: 1.0 });
+    std::thread::sleep(Duration::from_secs(1));
+    let status = client.status();
+    assert!(!status.audio);
+    assert_eq!(status.sound, 0);
 }

@@ -28,8 +28,14 @@
 //!   notified, asked for at once and handed to the window; the window's text
 //!   is notified when the window gives it, and sent when the desktop asks.
 //!
-//! The sound, the camera, the microphone and output selection are not spoken.
-//! Their pseudo-encodings are not listed, so the server never offers them.
+//! - **The audio extension**, when the window asked for sound: listed, and
+//!   answered with a format and an enable once the server announces it. Each
+//!   FLAC frame is decoded as it arrives, on this thread, into the
+//!   [`Playback`] the Windows audio device takes from. Asked for and not
+//!   announced is a server with no sound to give, and the session runs silent.
+//!
+//! The camera, the microphone and output selection are not spoken. Their
+//! pseudo-encodings are not listed, so the server never offers them.
 
 use std::future::{Future, pending};
 use std::sync::{Arc, Mutex};
@@ -41,6 +47,7 @@ use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::Instant;
+use wlshare_rfb::audio::FlacDecoder;
 use wlshare_rfb::client::{self, RectBody, ServerMsg};
 use wlshare_rfb::clipboard::{self, Caps, Message as ClipboardMessage};
 use wlshare_rfb::cursor::CursorImage;
@@ -50,15 +57,18 @@ use wlshare_rfb::pixel::PixelFormat;
 use wlshare_rfb::rsa_aes::{self, ClientKey, Credentials, FrameReader, Sealer, Strength};
 use wlshare_rfb::zrle::ZrleDecoder;
 use wlshare_rfb::{
-    ENCODING_CONTINUOUS_UPDATES, ENCODING_CURSOR, ENCODING_CURSOR_WITH_ALPHA, ENCODING_DENSITY, ENCODING_DESKTOP_SIZE,
-    ENCODING_EXTENDED_DESKTOP_SIZE, ENCODING_FENCE, ENCODING_RAW, ENCODING_ZRLE,
+    ENCODING_AUDIO, ENCODING_CONTINUOUS_UPDATES, ENCODING_CURSOR, ENCODING_CURSOR_WITH_ALPHA, ENCODING_DENSITY,
+    ENCODING_DESKTOP_SIZE, ENCODING_EXTENDED_DESKTOP_SIZE, ENCODING_FENCE, ENCODING_RAW, ENCODING_ZRLE,
 };
 
+use crate::audio::{self, Playback};
 use crate::framebuffer::Framebuffer;
 
 /// Listed in the client's order of preference, and deliberately short: a
 /// pseudo-encoding here is a promise to understand what it turns on, and
 /// [`client::parse`] ends the connection over a rectangle nobody asked for.
+/// [`ENCODING_AUDIO`] follows them when the window asked for sound
+/// ([`encodings`]).
 const ENCODINGS: &[i32] = &[
     ENCODING_ZRLE,
     ENCODING_RAW,
@@ -71,6 +81,14 @@ const ENCODINGS: &[i32] = &[
     ENCODING_DENSITY,
     clipboard::ENCODING,
 ];
+
+fn encodings(audio: bool) -> Vec<i32> {
+    let mut encodings = ENCODINGS.to_vec();
+    if audio {
+        encodings.push(ENCODING_AUDIO);
+    }
+    encodings
+}
 
 /// How long to wait for the far end to answer at all.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -95,6 +113,9 @@ pub struct Config {
     /// Empty asks for the `None` security type; anything else asks for RSA-AES,
     /// which is the only type this client authenticates with.
     pub password: String,
+    /// Whether to ask for the desktop's sound. A server without the audio
+    /// extension ignores the asking.
+    pub audio: bool,
 }
 
 /// What the window asks the desktop to be: its size in device pixels, and the
@@ -147,11 +168,18 @@ pub struct Status {
     /// How many updates have been decoded into the framebuffer. A session that
     /// is Ready with none of these is one whose desktop has not moved.
     pub frames: u64,
+    /// Whether the desktop's sound has been turned on: asked for, announced by
+    /// the server, and enabled. Until then there is nothing to play.
+    pub audio: bool,
+    /// How many FLAC frames have been decoded, twenty milliseconds each. A
+    /// server's capture runs whether the desktop plays anything or not, so
+    /// this counts up for as long as the sound is on.
+    pub sound: u64,
 }
 
 impl Default for Status {
     fn default() -> Self {
-        Self { state: State::Connecting, error: None, name: String::new(), scale: 1.0, frames: 0 }
+        Self { state: State::Connecting, error: None, name: String::new(), scale: 1.0, frames: 0, audio: false, sound: 0 }
     }
 }
 
@@ -168,6 +196,8 @@ pub struct Shared {
     /// a generation the window has not seen is text it has not put on the
     /// Windows clipboard yet. `None` until the desktop has provided any.
     pub clipboard: Mutex<(u64, Option<String>)>,
+    /// The desktop's sound, decoded and waiting for the Windows audio device.
+    pub audio: Mutex<Playback>,
     /// Called from the session's thread whenever there is something new to
     /// draw. The window uses it to post itself a redraw; it must not block.
     wake: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
@@ -180,6 +210,7 @@ impl Default for Shared {
             status: Mutex::new(Status::default()),
             cursor: Mutex::new((0, None)),
             clipboard: Mutex::new((0, None)),
+            audio: Mutex::new(Playback::default()),
             wake: Mutex::new(None),
         }
     }
@@ -299,7 +330,7 @@ async fn connect_and_run(config: Config, surface: Surface, shared: &Arc<Shared>,
 
     // The server's own format, so that nothing on this path swizzles a pixel.
     writer.send(&client::set_pixel_format(&Framebuffer::FORMAT)).await?;
-    writer.send(&client::set_encodings(ENCODINGS)).await?;
+    writer.send(&client::set_encodings(&encodings(config.audio))).await?;
 
     let mut session = Live {
         shared: Arc::clone(shared),
@@ -314,6 +345,7 @@ async fn connect_and_run(config: Config, surface: Surface, shared: &Arc<Shared>,
         server_clipboard: None,
         local_clipboard,
         clipboard_generation: 0,
+        audio: if config.audio { Audio::Asked } else { Audio::Off },
     };
     session.ask_for(&mut writer, surface).await?;
     session.stream_whole_desktop(&mut writer).await?;
@@ -481,6 +513,18 @@ struct Live {
     /// window chose to hand over.
     local_clipboard: Option<String>,
     clipboard_generation: u64,
+    audio: Audio,
+}
+
+/// How far the audio extension has got on this connection.
+enum Audio {
+    /// Not asked for, so never announced.
+    Off,
+    /// Listed, and waiting for the server to say it speaks it.
+    Asked,
+    /// Announced and enabled. The decoder is the stream's, from its begin to
+    /// its end; frames outside one are dropped.
+    On(Option<Box<FlacDecoder>>),
 }
 
 impl Live {
@@ -567,12 +611,19 @@ impl Live {
                 log::debug!("an update of {} rectangles", rects.len());
                 let mut resized = false;
                 let mut drew = false;
+                let mut announced = false;
                 for rect in rects {
                     match self.apply(rect)? {
                         Applied::Nothing => {}
                         Applied::Drew => drew = true,
                         Applied::Resized => resized = true,
+                        Applied::AudioAnnounced => announced = true,
                     }
+                }
+                // Answered after the update rather than inside it, so the
+                // enable goes out once however the update was framed.
+                if announced {
+                    self.turn_audio_on(writer).await?;
                 }
                 if resized {
                     self.stream_whole_desktop(writer).await?;
@@ -607,9 +658,55 @@ impl Live {
             // The server sends this once to say it understands them, and again
             // if they are ever turned off. Either way there is nothing to do.
             ServerMsg::EndOfContinuousUpdates => log::debug!("the server acknowledged continuous updates"),
-            // The audio extension is not listed, so these never come; framed,
-            // they are dropped rather than the session.
-            ServerMsg::AudioBegin | ServerMsg::AudioEnd | ServerMsg::AudioFrame(_) => log::debug!("sound nobody asked for; ignored"),
+            ServerMsg::AudioBegin => match &mut self.audio {
+                Audio::On(decoder) => {
+                    log::debug!("the desktop's sound begins");
+                    *decoder = match FlacDecoder::new(audio::FORMAT) {
+                        Ok(made) => Some(Box::new(made)),
+                        Err(error) => {
+                            log::warn!("{error}; the session runs silent");
+                            None
+                        }
+                    };
+                }
+                _ => log::debug!("an audio begin that was never asked for; ignored"),
+            },
+            ServerMsg::AudioEnd => {
+                log::debug!("the desktop's sound ends");
+                if let Audio::On(decoder) = &mut self.audio {
+                    *decoder = None;
+                }
+            }
+            // One frame that does not decode costs its own 20 ms and no more:
+            // each decodes on its own.
+            ServerMsg::AudioFrame(frame) => match &mut self.audio {
+                Audio::On(Some(decoder)) => match decoder.decode(&frame) {
+                    Ok(samples) => {
+                        self.shared.audio.lock().unwrap().push(&samples);
+                        self.shared.status.lock().unwrap().sound += 1;
+                    }
+                    Err(error) => log::warn!("{error}; the frame is dropped"),
+                },
+                _ => log::debug!("a FLAC frame outside a stream; dropped"),
+            },
+        }
+        Ok(())
+    }
+
+    /// The server speaks the audio extension: set the format and turn it on,
+    /// once, and only if it was asked for.
+    async fn turn_audio_on<W: AsyncWrite + Unpin>(&mut self, writer: &mut Writer<W>) -> anyhow::Result<()> {
+        match self.audio {
+            Audio::Asked => {
+                log::info!("the server has sound; asking for {:?}", audio::FORMAT);
+                writer.send(&client::audio_set_format(&audio::FORMAT)?).await?;
+                writer.send(&client::audio_enable()).await?;
+                self.audio = Audio::On(None);
+                self.shared.status.lock().unwrap().audio = true;
+                self.shared.wake();
+            }
+            Audio::Off => log::debug!("the server announced sound nobody asked for; ignored"),
+            Audio::On(_) => {}
         }
         Ok(())
     }
@@ -757,8 +854,8 @@ impl Live {
                 Ok(Applied::Nothing)
             }
             // The audio extension's announcement, which only comes to a client
-            // that listed it; this one did not.
-            RectBody::Audio => Ok(Applied::Nothing),
+            // that listed it.
+            RectBody::Audio => Ok(Applied::AudioAnnounced),
         }
     }
 
@@ -780,6 +877,8 @@ enum Applied {
     Nothing,
     Drew,
     Resized,
+    /// The server speaks the audio extension.
+    AudioAnnounced,
 }
 
 #[cfg(test)]
@@ -821,6 +920,7 @@ mod tests {
             server_clipboard: None,
             local_clipboard: None,
             clipboard_generation: 0,
+            audio: Audio::Off,
         }
     }
 
@@ -977,20 +1077,75 @@ mod tests {
     #[test]
     fn only_what_this_client_speaks_is_listed() {
         assert!(ENCODINGS.contains(&clipboard::ENCODING), "the clipboard");
-        assert!(!ENCODINGS.contains(&wlshare_rfb::ENCODING_AUDIO), "no sound");
         assert!(ENCODINGS.contains(&ENCODING_DENSITY), "the density is what 1× and 2× are");
     }
 
+    fn audio_announcement() -> ServerMsg {
+        ServerMsg::Update(vec![client::Rect { x: 0, y: 0, width: 0, height: 0, body: RectBody::Audio }])
+    }
+
+    #[test]
+    fn sound_is_listed_only_when_the_window_asked_for_it() {
+        assert!(!encodings(false).contains(&ENCODING_AUDIO));
+        assert_eq!(encodings(true).last(), Some(&ENCODING_AUDIO));
+        assert_eq!(&encodings(true)[..ENCODINGS.len()], ENCODINGS);
+    }
+
+    /// The announcement is answered with the format and an enable, once; the
+    /// frames of a stream are decoded into the playback buffer, and a frame
+    /// outside a stream is not.
     #[tokio::test]
-    async fn sound_a_server_sends_anyway_is_dropped_and_not_the_session() {
+    async fn an_announced_stream_is_turned_on_and_its_frames_are_played() {
+        use wlshare_rfb::audio::FlacEncoder;
+
+        let mut live = live();
+        live.audio = Audio::Asked;
+        let mut writer = writer();
+        live.handle(audio_announcement(), &mut writer).await.unwrap();
+        assert_eq!(sent(&mut writer), vec![ClientMsg::AudioFormat(audio::FORMAT), ClientMsg::AudioEnable]);
+        assert!(live.shared.status.lock().unwrap().audio);
+        live.handle(audio_announcement(), &mut writer).await.unwrap();
+        assert_eq!(sent(&mut writer), vec![], "turned on once");
+
+        let tone: Vec<u8> = (0..audio::FORMAT.block_frames() as i16).flat_map(|n| [n.to_le_bytes(), (-n).to_le_bytes()]).flatten().collect();
+        let frames = FlacEncoder::new(audio::FORMAT).unwrap().push(&[tone.clone(), tone.clone(), tone.clone(), tone].concat()).unwrap();
+        let frame = |i: usize| ServerMsg::AudioFrame(frames[i][8..].to_vec());
+
+        live.handle(frame(0), &mut writer).await.unwrap();
+        assert_eq!(live.shared.audio.lock().unwrap().waiting(), 0, "a frame before a begin is dropped");
+
+        live.handle(ServerMsg::AudioBegin, &mut writer).await.unwrap();
+        for i in 0..3 {
+            live.handle(frame(i), &mut writer).await.unwrap();
+        }
+        // Not a frame, and dropped on its own: the stream goes on.
+        live.handle(ServerMsg::AudioFrame(vec![0xFF, 0xF8, 0, 0]), &mut writer).await.unwrap();
+        assert_eq!(live.shared.audio.lock().unwrap().waiting(), 3 * 960);
+        assert_eq!(live.shared.status.lock().unwrap().sound, 3);
+
+        let (mut left, mut right) = (vec![0.0; 3], vec![0.0; 3]);
+        live.shared.audio.lock().unwrap().read(&mut left, &mut right);
+        assert_eq!(left, vec![0.0, 1.0 / 32768.0, 2.0 / 32768.0]);
+        assert_eq!(right, vec![0.0, -1.0 / 32768.0, -2.0 / 32768.0]);
+
+        live.handle(ServerMsg::AudioEnd, &mut writer).await.unwrap();
+        live.handle(frame(3), &mut writer).await.unwrap();
+        assert_eq!(live.shared.status.lock().unwrap().sound, 3, "and one after the end is dropped");
+        assert_eq!(sent(&mut writer), vec![], "none of it is answered");
+    }
+
+    /// Not asked for, the extension's messages are dropped rather than the
+    /// session, and none of them is answered.
+    #[tokio::test]
+    async fn sound_nobody_asked_for_is_not_turned_on() {
         let mut live = live();
         let mut writer = writer();
+        live.handle(audio_announcement(), &mut writer).await.unwrap();
         live.handle(ServerMsg::AudioBegin, &mut writer).await.unwrap();
         live.handle(ServerMsg::AudioFrame(vec![0xFF, 0xF8, 0, 0]), &mut writer).await.unwrap();
         live.handle(ServerMsg::AudioEnd, &mut writer).await.unwrap();
-        let announcement = client::Rect { x: 0, y: 0, width: 0, height: 0, body: RectBody::Audio };
-        live.handle(ServerMsg::Update(vec![announcement]), &mut writer).await.unwrap();
-        assert_eq!(sent(&mut writer), vec![], "none of it is answered");
+        assert_eq!(sent(&mut writer), vec![]);
+        assert!(!live.shared.status.lock().unwrap().audio);
     }
 
     /// The server's side of the clipboard, as the daemon frames it.
