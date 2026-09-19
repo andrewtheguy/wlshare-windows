@@ -1,5 +1,5 @@
 //! A session against a real wlshare, which no unit test can stand in for: the
-//! handshake, the ZRLE stream, the cursor, the density extension, the
+//! handshake, the ZRLE and VP9 streams, the cursor, the density extension, the
 //! clipboard and the sound all only exist between two processes.
 //!
 //! Ignored by default and pointed at `WLSHARE_TEST_SERVER`, or `127.0.0.1:5900`,
@@ -15,7 +15,7 @@
 
 use std::time::{Duration, Instant};
 
-use wlshare_client_core::{BUTTON_LEFT, Client, Config, State, Surface, WHEEL_DELTA};
+use wlshare_client_core::{BUTTON_LEFT, Client, Config, Encoding, State, Surface, WHEEL_DELTA};
 
 const PATIENCE: Duration = Duration::from_secs(20);
 
@@ -39,15 +39,15 @@ fn until<T>(what: &str, mut done: impl FnMut() -> Option<T>) -> T {
 }
 
 fn connect(surface: Surface) -> Client {
-    connect_with(surface, false)
+    connect_with(surface, false, Encoding::Zrle)
 }
 
-fn connect_with(surface: Surface, audio: bool) -> Client {
+fn connect_with(surface: Surface, audio: bool, encoding: Encoding) -> Client {
     let _ = env_logger::builder().is_test(false).try_init();
     let (host, port) = server();
     let username = std::env::var("WLSHARE_TEST_USERNAME").unwrap_or_default();
     let password = std::env::var("WLSHARE_TEST_PASSWORD").unwrap_or_default();
-    let client = Client::connect(Config { host, port, username, password, audio }, surface);
+    let client = Client::connect(Config { host, port, username, password, audio, encoding }, surface);
     until("the handshake", || match client.status() {
         status if status.state == State::Ready => Some(()),
         status if status.state == State::Closed => panic!("the session ended: {:?}", status.error),
@@ -80,6 +80,35 @@ fn a_session_gets_a_desktop_and_paints_it() {
     let damage = damage.expect("a frame that painted damages what it painted");
     assert!(damage.width > 0 && damage.height > 0);
     assert!(client.status().frames > 0, "those pixels came from a decoded update, not from a resize");
+}
+
+/// The same desktop as VP9: the stream arrives, decodes to a painted picture,
+/// and follows a change of size and density — each a new encoder on the
+/// server, whose first frame is a keyframe the same decoder takes.
+#[test]
+#[ignore = "needs a wlshare server; see the module comment"]
+fn a_vp9_session_gets_a_desktop_and_follows_a_resize() {
+    let client = connect_with(Surface { width: 1024, height: 768, scale: 1.0 }, false, Encoding::Vp9);
+    let lit = until("a painted 1024x768 VP9 desktop", || {
+        client.with_frame(|fb, _| {
+            if (fb.width(), fb.height()) != (1024, 768) {
+                return None;
+            }
+            let pixels = fb.pixels().as_chunks::<4>().0;
+            let lit = pixels.iter().filter(|p| p[..3] != [0, 0, 0]).count();
+            (lit > 0).then(|| (lit, pixels[pixels.len() / 2 + 512]))
+        })
+    });
+    // B, G, R: the desktop's background, which is whatever colour the server
+    // was given — compare it by eye with what ZRLE shows.
+    println!("VP9 at 1024x768, {} pixels lit, the centre is {:?}", lit.0, lit.1);
+
+    client.surface(Surface { width: 1280, height: 800, scale: 2.0 });
+    settled(&client, 1280, 800, 2.0);
+    let frames = client.status().frames;
+    until("a VP9 frame at the new size", || (client.status().frames > frames).then_some(()));
+    let status = client.status();
+    assert_eq!(status.state, State::Ready, "{:?}", status.error);
 }
 
 /// Wait for the desktop to be this many pixels across at this scale, which is
@@ -181,7 +210,7 @@ fn a_clipboard_given_by_one_window_reaches_another_through_the_desktop() {
 #[test]
 #[ignore = "needs a wlshare server; see the module comment"]
 fn sound_asked_for_is_turned_on_and_decodes() {
-    let client = connect_with(Surface { width: 1024, height: 768, scale: 1.0 }, true);
+    let client = connect_with(Surface { width: 1024, height: 768, scale: 1.0 }, true, Encoding::Zrle);
     until("the sound turned on", || client.status().audio.then_some(()));
     let sound = until("a second of decoded sound", || {
         let sound = client.status().sound;

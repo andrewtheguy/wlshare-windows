@@ -22,12 +22,16 @@
 
 use std::ffi::{CStr, c_char, c_void};
 
-use crate::{Client, Config, Surface, session::State};
+use crate::{Client, Config, Encoding, Surface, session::State};
 
 /// [`State`] as the app sees it.
 pub const WLSHARE_STATE_CONNECTING: i32 = 0;
 pub const WLSHARE_STATE_READY: i32 = 1;
 pub const WLSHARE_STATE_CLOSED: i32 = 2;
+
+/// [`Encoding`] as the app says it.
+pub const WLSHARE_ENCODING_VP9: u8 = 0;
+pub const WLSHARE_ENCODING_ZRLE: u8 = 1;
 
 /// Where a session has got to, and what the desktop looks like.
 #[repr(C)]
@@ -135,7 +139,8 @@ unsafe fn copy_out(from: &str, out: *mut c_char, cap: usize) -> usize {
 /// # Safety
 /// The three strings are NUL-terminated UTF-8, or null for empty. An empty
 /// password asks for the `None` security type and any other asks for RSA-AES.
-/// `audio` asks for the desktop's sound.
+/// `audio` asks for the desktop's sound. `encoding` is one of the
+/// `WLSHARE_ENCODING_*` values, and anything else is VP9, the default.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wlshare_client_connect(
     host: *const c_char,
@@ -143,11 +148,16 @@ pub unsafe extern "C" fn wlshare_client_connect(
     username: *const c_char,
     password: *const c_char,
     audio: bool,
+    encoding: u8,
     surface_width: u16,
     surface_height: u16,
     scale: f64,
 ) -> *mut Client {
-    let config = unsafe { Config { host: text(host), port, username: text(username), password: text(password), audio } };
+    let encoding = match encoding {
+        WLSHARE_ENCODING_ZRLE => Encoding::Zrle,
+        _ => Encoding::Vp9,
+    };
+    let config = unsafe { Config { host: text(host), port, username: text(username), password: text(password), audio, encoding } };
     let surface = Surface { width: surface_width, height: surface_height, scale };
     Box::into_raw(Box::new(Client::connect(config, surface)))
 }

@@ -556,6 +556,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
+name = "libvpx-prebuilt-sys"
+version = "0.1.0"
+source = "git+https://github.com/andrewtheguy/libvpx-prebuilt?tag=v1.16.0-20260918235810-31a9bf7#31a9bf7ba659ae668e7ef58883d3009b87f5e2a3"
+
+[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1053,13 +1058,14 @@ dependencies = [
 
 [[package]]
 name = "wlshare-rfb"
-version = "0.0.26"
-source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.26#f20c59ece1f0923035515f5b18648b77155d6274"
+version = "0.0.33"
+source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.33#aade7e5a7148f0645229b479bcf4df2eb349547a"
 dependencies = [
  "aes",
  "eax",
  "flacenc",
  "flate2",
+ "libvpx-prebuilt-sys",
  "pkcs8",
  "rand",
  "rsa",

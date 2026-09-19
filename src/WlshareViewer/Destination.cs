@@ -4,12 +4,25 @@ using System.Text.Json.Serialization;
 
 namespace WlshareViewer;
 
+/// <summary>How the desktop's pixels are to arrive.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<PixelEncoding>))]
+internal enum PixelEncoding
+{
+    /// <summary>wlshare's VP9 stream: the whole desktop, 4:4:4, at the quality
+    /// the server sets. The default: small and smooth when the desktop moves. A
+    /// server without it is an error, not a fallback to ZRLE.</summary>
+    Vp9,
+    /// <summary>ZRLE: every pixel exactly as the desktop drew it.</summary>
+    Zrle,
+}
+
 /// <summary>
 /// A desktop to connect to, and what is remembered about it between launches.
 ///
-/// The host, the port, the user name and whether to play the desktop's sound
-/// are remembered, in %LOCALAPPDATA%\wlshare\settings.json. The password is
-/// not: it is typed into the form each time, and a file is no place for one.
+/// The host, the port, the user name, the encoding and whether to play the
+/// desktop's sound are remembered, in %LOCALAPPDATA%\wlshare\settings.json.
+/// The password is not: it is typed into the form each time, and a file is no
+/// place for one.
 /// </summary>
 internal sealed record Destination
 {
@@ -21,15 +34,17 @@ internal sealed record Destination
     /// <summary>Ask for the desktop's sound. A server without it gives none
     /// either way.</summary>
     public bool Audio { get; init; }
+    public PixelEncoding Encoding { get; init; } = PixelEncoding.Vp9;
 
     public string Label => Host.Contains(':') ? $"[{Host}]:{Port}" : $"{Host}:{Port}";
 
     /// <summary>
     /// The command line, for a launch that came from a shell:
     ///
-    ///     WlshareViewer.exe --server 192.168.1.10:5900 --username me --audio
+    ///     WlshareViewer.exe --server 192.168.1.10:5900 --username me --audio --encoding zrle
     ///
     /// --audio is the form's sound checkbox; without it the session is silent.
+    /// --encoding is the form's encoding, vp9 (the default) or zrle.
     /// Null when no --server was given, which is every launch from the Start
     /// menu — those get the form. There is no password argument: an argument
     /// list is in the shell's history and in every process listing. A launch
@@ -57,6 +72,7 @@ internal sealed record Destination
             Username = Value("--username") ?? "",
             Password = "",
             Audio = args.Contains("--audio"),
+            Encoding = string.Equals(Value("--encoding"), "zrle", StringComparison.OrdinalIgnoreCase) ? PixelEncoding.Zrle : PixelEncoding.Vp9,
         };
     }
 

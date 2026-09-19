@@ -139,7 +139,9 @@ internal sealed partial class MainWindow : Window
             case Client.State.Ready:
                 Banner.Visibility = Visibility.Collapsed;
                 var name = status.Name.Length == 0 ? _last?.Label : status.Name;
-                SessionTitle.Text = $"{name} — {status.Width}×{status.Height} @ {Scale(status.Scale)}";
+                // A VP9 session is VP9 or nothing: a server without it ends it.
+                var encoding = _last?.Encoding == PixelEncoding.Vp9 ? " · VP9" : "";
+                SessionTitle.Text = $"{name} — {status.Width}×{status.Height} @ {Scale(status.Scale)}{encoding}";
                 Title = $"{name} — wlshare";
                 // Not before the server has said it has sound: a session
                 // without it leaves the Windows audio device alone.

@@ -8,8 +8,9 @@ namespace WlshareViewer;
 
 /// <summary>
 /// Where a session starts: a form for the host, the port, the user name, the
-/// password and whether to play the desktop's sound, for someone who opened the app from the Start menu
-/// and has no command line to put them on.
+/// password, the encoding and whether to play the desktop's sound, for someone
+/// who opened the app from the Start menu and has no command line to put them
+/// on.
 ///
 /// It is also where a session ends up — a refused or dropped connection brings
 /// this back with the reason on it, so there is somewhere to correct and retry.
@@ -33,6 +34,7 @@ internal sealed partial class ConnectView : UserControl
         PortBox.Text = destination.Port.ToString(CultureInfo.InvariantCulture);
         UsernameBox.Text = destination.Username;
         PasswordBox.Password = destination.Password;
+        EncodingBox.SelectedIndex = (int)destination.Encoding;
         AudioBox.IsChecked = destination.Audio;
         Say(error);
         var first = string.IsNullOrEmpty(destination.Host) ? (Control)HostBox : PasswordBox;
@@ -78,6 +80,7 @@ internal sealed partial class ConnectView : UserControl
             Username = UsernameBox.Text.Trim(),
             Password = PasswordBox.Password,
             Audio = AudioBox.IsChecked == true,
+            Encoding = EncodingBox.SelectedIndex == (int)PixelEncoding.Zrle ? PixelEncoding.Zrle : PixelEncoding.Vp9,
         });
     }
 }

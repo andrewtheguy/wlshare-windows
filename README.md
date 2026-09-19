@@ -5,7 +5,12 @@ VNC server: a WinUI 3 window drawing a Win2D canvas, over a Rust core that
 speaks the whole RFB session.
 
 **Scope:** the screen, the keyboard, the pointer, the clipboard and the
-desktop's sound. The desktop is asked to be
+desktop's sound. The screen arrives as wlshare's VP9 stream — the whole
+desktop, 4:4:4, at the server's `vp9_quality` or, while the link is behind,
+lower, down to its `vp9_quality_min` — or, when the connect form's **Encoding**
+says so, as exact ZRLE. VP9 is asked for alone: a server without it ends the
+session with an error instead of sending ZRLE, and the session's title ends in
+`· VP9` when the form chose it. The desktop is asked to be
 exactly the window's size in device pixels, so what is on screen is one device
 pixel per desktop pixel and never resampled, and it is drawn at **1×** or
 **2×** to match the panel the window is on: 2× on one of 180 pixels per inch or
@@ -52,8 +57,8 @@ pwsh scripts/package-windows.ps1   # dist\package\WlshareViewer-windows-x64.msi
 
 ## Connecting
 
-The app opens on a form for the host, the port, the user name and the
-password, and connects when you fill it in. It comes back filled with the last
+The app opens on a form for the host, the port, the user name, the password
+and the encoding, and connects when you fill it in. It comes back filled with the last
 destination; the password is never remembered. **Disconnect**
 ends the session, and a connection that is refused or drops brings the form
 back with the reason on it.
@@ -65,10 +70,11 @@ that encrypts the session.
 A destination on the command line skips the form:
 
 ```powershell
-WlshareViewer.exe --server 192.168.1.10:5900 --username me --audio
+WlshareViewer.exe --server 192.168.1.10:5900 --username me --audio --encoding zrle
 ```
 
 `--audio` is the form's sound checkbox; without it the session is silent.
+`--encoding` is the form's encoding, `vp9` (the default) or `zrle`.
 
 There is no password argument, deliberately: an argument list is in the
 shell's history and in every process listing. A desktop that wants one refuses

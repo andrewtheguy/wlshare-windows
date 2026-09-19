@@ -27,14 +27,14 @@ crate-type = ["cdylib", "rlib"]
 # That rewrites Cargo.lock while it is in force, so put the pinned one back
 # (`git checkout core/Cargo.lock`) before committing anything.
 # `decode` is the FLAC decoder the sound needs; the daemon leaves it off.
-wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.26", features = ["decode"] }
+wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.33", features = ["decode"] }
 anyhow = "1"
 log = "0.4"
 tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "sync", "time", "macros"] }
 
 [dev-dependencies]
 # The session's tests play the server, which encodes the sound it sends.
-wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.26", features = ["decode", "encode"] }
+wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.33", features = ["decode", "encode"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "net", "time"] }
 # The live tests talk to a real server; `RUST_LOG=debug` is how one says what it
 # sent when it did not send what was expected.
