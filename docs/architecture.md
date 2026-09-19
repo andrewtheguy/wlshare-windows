@@ -12,23 +12,30 @@ desktop. Two halves, and the line between them is a C ABI:
 ```
 
 `core/` is a Rust crate that owns the socket, the RFB session, the decoders and
-the framebuffer they write into. `src/WlshareViewer/` is a WinUI 3 app that owns
+the framebuffer they write into — through `wlshare-client`, the session both
+native apps are built on, with the Windows-only parts on top. `src/WlshareViewer/` is a WinUI 3 app that owns
 a window, a Win2D canvas and the events Windows hands it. The app parses no
 protocol and the core knows no WinUI, which is what lets the whole of the first
 be unit-tested on a machine that has never seen the second.
 
-It is `../wlshare-macos` with the AppKit half swapped for WinUI. The core is
-that repo's core, with the two tables that
-are about the keyboard and the wheel rewritten for Windows. What is different is
-how the halves meet: the Mac app links the core as a static library, and .NET
-can call native code only out of a DLL it loads at run time, so here the crate
-is a `cdylib` and the app ships it beside the `.exe`.
+It is `../wlshare-macos` with the AppKit half swapped for WinUI, on the same
+session. `wlshare-client`, in the `wlshare` repo, is everything but the
+window: the handshake, the density and resize rules (`Live::ask_for`), the
+decoders, the framebuffer, the pointer's shape, the clipboard and the sound —
+the names in this document that are not in this repo are its. `core/` holds
+what is Windows': the table that turns a virtual key into a keysym
+(`keysym.rs`), the gathering of `WHEEL_DELTA`s into notches (`wheel.rs`), and
+the C ABI (`ffi.rs`), with a `Client` that is `wlshare-client`'s plus the
+wheel's leftovers. What is different from the Mac is how the halves meet: the
+Mac app links its core as a static library, and .NET can call native code only
+out of a DLL it loads at run time, so here the crate is a `cdylib` and the app
+ships it beside the `.exe`.
 
 Every protocol byte comes from `wlshare-rfb` — the same crate the daemon is
-built on, read from the other end. It is a cargo dependency on a released tag of
-the `wlshare` repo rather than the sibling checkout, so what this repo builds is
-decided by `core/Cargo.toml` and `core/Cargo.lock` and not by the state of
-somebody's `../wlshare`.
+built on, read from the other end — through `wlshare-client`, which re-exports
+it. The dependency is a released tag of the `wlshare` repo rather than the
+sibling checkout, so what this repo builds is decided by `core/Cargo.toml` and
+`core/Cargo.lock` and not by the state of somebody's `../wlshare`.
 
 ## Scope
 

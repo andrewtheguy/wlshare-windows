@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/andrewtheguy/wlshare-windows"
-description = "The wlshare client's session, framebuffer and C ABI, under the Windows app"
+description = "The wlshare client's Windows half — its key and wheel tables and the C ABI — under the Windows app"
 
 # `cdylib` is what the app P/Invokes — .NET loads native code only out of a
 # DLL at run time, so there is no static library to link the way the macOS app
@@ -14,31 +14,21 @@ name = "wlshare_client_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# Every protocol byte, from the release this client was built and tested
-# against — not the sibling checkout, so what is built here is the same wire on
-# this machine, on the CI VM and on one that has never heard of `../wlshare`.
-# Cargo.lock holds the revision the tag stood for.
+# The session, and every protocol byte under it, from the release this client
+# was built and tested against — not the sibling checkout, so what is built here
+# is the same on this machine, on the CI VM and on one that has never heard of
+# `../wlshare`. Cargo.lock holds the revision the tag stood for. The macOS app
+# is built on the same crate. `wlshare_rfb` comes re-exported with it, so there
+# is one tag to move and no second one to fall out of step.
 #
 # To build against an unreleased change, point it at the checkout for as long
 # as that takes, without committing anything:
 #
-#   cargo test --config 'patch."https://github.com/andrewtheguy/wlshare.git".wlshare-rfb.path="../../wlshare/crates/wlshare-rfb"'
+#   cargo test --config 'patch."https://github.com/andrewtheguy/wlshare.git".wlshare-client.path="../../wlshare/crates/wlshare-client"'
 #
 # That rewrites Cargo.lock while it is in force, so put the pinned one back
 # (`git checkout core/Cargo.lock`) before committing anything.
-# `decode` is the FLAC decoder the sound needs; the daemon leaves it off.
-wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.33", features = ["decode"] }
-anyhow = "1"
-log = "0.4"
-tokio = { version = "1", default-features = false, features = ["rt", "net", "io-util", "sync", "time", "macros"] }
-
-[dev-dependencies]
-# The session's tests play the server, which encodes the sound it sends.
-wlshare-rfb = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.33", features = ["decode", "encode"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "net", "time"] }
-# The live tests talk to a real server; `RUST_LOG=debug` is how one says what it
-# sent when it did not send what was expected.
-env_logger = "0.11"
+wlshare-client = { git = "https://github.com/andrewtheguy/wlshare.git", tag = "v0.0.34" }
 
 [profile.release]
 strip = true

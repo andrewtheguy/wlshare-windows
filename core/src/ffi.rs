@@ -22,7 +22,7 @@
 
 use std::ffi::{CStr, c_char, c_void};
 
-use crate::{Client, Config, Encoding, Surface, session::State};
+use crate::{Client, Config, Encoding, State, Surface};
 
 /// [`State`] as the app sees it.
 pub const WLSHARE_STATE_CONNECTING: i32 = 0;

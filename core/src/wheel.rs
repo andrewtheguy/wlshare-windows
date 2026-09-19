@@ -8,11 +8,7 @@
 //! small deltas that only add up to one. Those have to be gathered, and the
 //! leftovers kept for the next event, or a slow scroll scrolls nothing at all.
 
-/// The four wheel "buttons" of the RFB button mask, as the server reads them.
-pub const WHEEL_UP: u8 = 8;
-pub const WHEEL_DOWN: u8 = 16;
-pub const WHEEL_LEFT: u8 = 32;
-pub const WHEEL_RIGHT: u8 = 64;
+pub use wlshare_client::{WHEEL_DOWN, WHEEL_LEFT, WHEEL_RIGHT, WHEEL_UP};
 
 /// Windows' `WHEEL_DELTA`: how much of a scroll is one notch.
 pub const WHEEL_DELTA: i32 = 120;
