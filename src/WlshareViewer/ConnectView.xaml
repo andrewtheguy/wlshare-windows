@@ -5,21 +5,52 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Width="360" Spacing="12" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    KeyDown="OnKeyDown">
-            <TextBlock Text="Connect to a wlshare desktop" Style="{StaticResource SubtitleTextBlockStyle}" />
-            <TextBox x:Name="HostBox" Header="Host" PlaceholderText="hostname or address" />
-            <TextBox x:Name="PortBox" Header="Port" PlaceholderText="5900" InputScope="Number" />
-            <TextBox x:Name="UsernameBox" Header="User name" PlaceholderText="optional" />
-            <PasswordBox x:Name="PasswordBox" Header="Password" PlaceholderText="none" />
-            <!-- VP9 first, because it is the default; the order is PixelEncoding's. -->
-            <ComboBox x:Name="EncodingBox" Header="Encoding" HorizontalAlignment="Stretch">
-                <ComboBoxItem Content="VP9 4:4:4" />
-                <ComboBoxItem Content="ZRLE (exact, larger)" />
-            </ComboBox>
-            <CheckBox x:Name="AudioBox" Content="Play the desktop's sound" />
-            <InfoBar x:Name="Message" Severity="Error" IsClosable="False" IsOpen="False" />
-            <Button Content="Connect" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="OnConnect" />
-        </StackPanel>
+        <Grid ColumnSpacing="24" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center"
+              KeyDown="OnKeyDown">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="240" />
+                <ColumnDefinition Width="360" />
+            </Grid.ColumnDefinitions>
+
+            <!-- The saved desktops. As tall as the form beside it (OnFormSized),
+                 and scrolling past that. -->
+            <Grid x:Name="ListPanel" RowSpacing="4" VerticalAlignment="Top">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Border BorderThickness="1" CornerRadius="{StaticResource ControlCornerRadius}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                    <ListView x:Name="List" SelectionMode="Single"
+                              SelectionChanged="OnSelectionChanged" DoubleTapped="OnListDoubleTapped" />
+                </Border>
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4">
+                    <Button x:Name="AddButton" ToolTipService.ToolTip="New desktop" Click="OnAdd">
+                        <SymbolIcon Symbol="Add" />
+                    </Button>
+                    <Button x:Name="RemoveButton" ToolTipService.ToolTip="Delete this desktop" Click="OnRemove">
+                        <SymbolIcon Symbol="Remove" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <StackPanel x:Name="FormPanel" Grid.Column="1" Spacing="12" SizeChanged="OnFormSized">
+                <TextBlock Text="Connect to a wlshare desktop" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBox x:Name="NameBox" Header="Name" PlaceholderText="the host, if none" />
+                <TextBox x:Name="HostBox" Header="Host" PlaceholderText="hostname or address" />
+                <TextBox x:Name="PortBox" Header="Port" PlaceholderText="5900" InputScope="Number" />
+                <TextBox x:Name="UsernameBox" Header="User name" PlaceholderText="optional" />
+                <PasswordBox x:Name="PasswordBox" Header="Password" PlaceholderText="none" />
+                <!-- VP9 first, because it is the default; the order is PixelEncoding's. -->
+                <ComboBox x:Name="EncodingBox" Header="Encoding" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="VP9 4:4:4" />
+                    <ComboBoxItem Content="ZRLE (exact, larger)" />
+                </ComboBox>
+                <CheckBox x:Name="SavesPasswordBox" Content="Save the password" />
+                <CheckBox x:Name="AudioBox" Content="Play the desktop's sound" />
+                <InfoBar x:Name="Message" Severity="Error" IsClosable="False" IsOpen="False" />
+                <Button Content="Connect" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="OnConnect" />
+            </StackPanel>
+        </Grid>
     </ScrollViewer>
 </UserControl>

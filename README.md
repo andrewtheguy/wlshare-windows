@@ -59,11 +59,17 @@ pwsh scripts/package-windows.ps1   # dist\package\WlshareViewer-windows-x64.msi
 
 ## Connecting
 
-The app opens on a form for the host, the port, the user name, the password
-and the encoding, and connects when you fill it in. It comes back filled with the last
-destination; the password is never remembered. **Disconnect**
-ends the session, and a connection that is refused or drops brings the form
-back with the reason on it.
+The app opens on the saved desktops as a list, and beside it a form for the one
+selected: a name, the host, the port, the user name, the password, the encoding
+and the sound. **Connect** (or a double-click on the row) saves the form into
+that profile and connects; with nothing in the list yet it makes the first one
+of what you typed. **+** starts a new desktop and **−** deletes the selected
+one. A row is its name and where it goes — there is no picture of the desktop.
+
+The password is saved only for a profile whose **Save the password** is ticked,
+and then sealed: see [Saved passwords](#saved-passwords). **Disconnect** ends
+the session, and a connection that is refused or drops brings the list back
+with the reason on it.
 
 An empty password asks for the `None` security type; anything else asks for
 RSA-AES, which is the only type this client authenticates with — and the one
@@ -79,8 +85,19 @@ WlshareViewer.exe --server 192.168.1.10:5900 --username me --audio --encoding zr
 `--encoding` is the form's encoding, `vp9` (the default) or `zrle`.
 
 There is no password argument, deliberately: an argument list is in the
-shell's history and in every process listing. A desktop that wants one refuses
-and brings the form back to type it into.
+shell's history and in every process listing. A password saved in a profile for
+the same host, port and user name is used, and anything else is typed into the
+form — which is what a connection refused for want of one brings back.
+
+### Saved passwords
+
+They are kept the way Chrome and Slack keep theirs. Credential Manager holds one
+generic credential, **WlshareViewer Safe Storage**: a random 256-bit key, made
+when the first password is saved. Each saved password is sealed with it
+(AES-GCM, bound to its profile) and kept with the profiles in
+`%LOCALAPPDATA%\wlshare\profiles.json`; the password is never written anywhere
+in the clear. Removing the credential in Credential Manager forgets every saved
+password at once.
 
 ## Checks
 

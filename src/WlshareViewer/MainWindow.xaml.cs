@@ -15,9 +15,8 @@ internal sealed partial class MainWindow : Window
     private DesktopView? _desktop;
     private ClipboardSync? _clipboard;
     private AudioOutput? _audio;
-    /// <summary>The last destination tried, which is what the form comes back
-    /// filled with — including a password that was typed, so a connection that
-    /// failed for some other reason can be retried as it is.</summary>
+    /// <summary>The destination of the session in the window, for its
+    /// title.</summary>
     private Destination? _last;
 
     public MainWindow(Destination? fromArguments)
@@ -30,6 +29,15 @@ internal sealed partial class MainWindow : Window
         // Ends the session and joins its thread while there is still a window
         // for its callbacks to have reached.
         Closed += (_, _) => EndSession();
+        // Not while the form holds something that cannot be saved: it stays up
+        // with the reason on it.
+        AppWindow.Closing += (_, e) =>
+        {
+            if (Form.Visibility == Visibility.Visible && !Form.Save())
+            {
+                e.Cancel = true;
+            }
+        };
         // The moments the window becomes the one in use, which is when the
         // Windows clipboard is offered to the desktop — and when a desktop
         // clipboard that could not be written, the Windows one being held by
@@ -49,6 +57,21 @@ internal sealed partial class MainWindow : Window
         // asks.
         if (fromArguments is not null)
         {
+            // The password saved for the same place and user, if any. One that
+            // will not open is not tried as none: the form says why, and is
+            // where it is typed.
+            var profile = Form.Profiles.Matching(fromArguments);
+            try
+            {
+                fromArguments = fromArguments with { Password = profile?.Password() ?? "" };
+            }
+            catch (SafeStorageException e)
+            {
+                Form.Load(fromArguments, profile?.Id);
+                Ask(e.Message);
+                return;
+            }
+            Form.Load(fromArguments, profile?.Id);
             Open(fromArguments);
         }
         else
@@ -74,7 +97,6 @@ internal sealed partial class MainWindow : Window
     {
         EndSession();
         _last = destination;
-        destination.Save();
 
         var desktop = new DesktopView();
         _desktop = desktop;
@@ -168,7 +190,7 @@ internal sealed partial class MainWindow : Window
         Session.Visibility = Visibility.Collapsed;
         Form.Visibility = Visibility.Visible;
         Title = "wlshare";
-        Form.Show(_last ?? Destination.Remembered(), error);
+        Form.Show(error);
     }
 
     private void OnDisconnect(object sender, RoutedEventArgs e)
