@@ -182,13 +182,8 @@ internal sealed partial class ConnectView : UserControl
         {
             _current = profile.Id;
             Profiles.Selected = profile.Id;
-            Refill();
-            Select(profile.Id);
         }
-        else if (Profiles.IndexOf(profile.Id) is var row and >= 0)
-        {
-            ((ListViewItem)List.Items[row]).Content = Row(profile);
-        }
+        Sync();
         PasswordBox.PlaceholderText = profile.SealedPassword is null ? "none" : "saved";
         RemoveButton.IsEnabled = true;
         return true;
@@ -359,6 +354,8 @@ internal sealed partial class ConnectView : UserControl
         {
             return;
         }
+        // Taken before the commit, which may make the list again.
+        var target = (List.SelectedItem as ListViewItem)?.Tag as Guid?;
         if (!Commit())
         {
             _moving = true;
@@ -366,7 +363,7 @@ internal sealed partial class ConnectView : UserControl
             _moving = false;
             return;
         }
-        Shown((List.SelectedItem as ListViewItem)?.Tag as Guid?);
+        Select(target);
     }
 
     /// <summary>A double-click on a row is Connect; one on the empty space
@@ -380,6 +377,26 @@ internal sealed partial class ConnectView : UserControl
                 Connect();
                 return;
             }
+        }
+    }
+
+    /// <summary>The list brought up to the saved profiles — which another
+    /// launch of the app may have added to or taken from since it was made —
+    /// with the selection kept.</summary>
+    private void Sync()
+    {
+        var profiles = Profiles.Profiles;
+        var same = List.Items.Count == profiles.Count
+            && profiles.Select((profile, row) => ((ListViewItem)List.Items[row]).Tag is Guid id && id == profile.Id).All(x => x);
+        if (!same)
+        {
+            Refill();
+            Select(_current);
+            return;
+        }
+        for (var row = 0; row < profiles.Count; row++)
+        {
+            ((ListViewItem)List.Items[row]).Content = Row(profiles[row]);
         }
     }
 

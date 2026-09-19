@@ -86,30 +86,39 @@ internal sealed record Profile
 ///
 /// A file is all right here: the only secret in a profile is sealed, and the
 /// key that opens it is in Credential Manager.
+///
+/// Every launch of the app is a process of its own with the same file under
+/// it, so a change is made to the file as it is now, not as it was when this
+/// launch read it: under <see cref="Shared"/>'s lock, read again, changed and
+/// written back — and only then taken as this launch's list, so a change that
+/// could not be written is not kept either.
 /// </summary>
 internal sealed class ProfileStore
 {
     private static string FilePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "wlshare", "profiles.json");
 
-    private readonly List<Profile> _profiles;
+    private List<Profile> _profiles;
     private Guid? _selected;
 
     public ProfileStore()
     {
-        ProfileFile? saved = null;
         try
         {
-            saved = JsonSerializer.Deserialize(File.ReadAllText(FilePath), ProfilesJson.Default.ProfileFile);
+            var saved = Shared.Locked(Read);
+            _profiles = saved.Profiles;
+            _selected = saved.Selected;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // Nothing saved yet, or nothing readable: the list starts empty.
+            // Nothing readable: the list starts empty, and saving to it says
+            // why.
+            _profiles = [];
         }
-        _profiles = saved?.Profiles ?? [];
-        _selected = saved?.Selected;
     }
 
+    /// <summary>As of the last change made here; another launch may have
+    /// changed the file since.</summary>
     public IReadOnlyList<Profile> Profiles => _profiles;
 
     /// <summary>The one the form was showing when the app was last used. Not
@@ -127,7 +136,7 @@ internal sealed class ProfileStore
             _selected = value;
             try
             {
-                Write();
+                Shared.Locked(() => Write(Read() with { Selected = value }));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -147,40 +156,94 @@ internal sealed class ProfileStore
 
     /// <summary>Save <paramref name="profile"/>, over the one with its id or
     /// after the rest. Throws what the file does.</summary>
-    public void Put(Profile profile)
+    public void Put(Profile profile) => Change(_selected, profiles =>
     {
-        var at = IndexOf(profile.Id);
+        var at = profiles.FindIndex(p => p.Id == profile.Id);
         if (at >= 0)
         {
-            _profiles[at] = profile;
+            profiles[at] = profile;
         }
         else
         {
-            _profiles.Add(profile);
+            profiles.Add(profile);
         }
-        Write();
-    }
+    });
 
     /// <summary>Throws what the file does.</summary>
-    public void Remove(Guid id)
+    public void Remove(Guid id) =>
+        Change(_selected == id ? null : _selected, profiles => profiles.RemoveAll(p => p.Id == id));
+
+    private void Change(Guid? selected, Action<List<Profile>> change) => Shared.Locked(() =>
     {
-        _profiles.RemoveAll(p => p.Id == id);
-        if (_selected == id)
+        var saved = Read();
+        change(saved.Profiles);
+        Write(saved with { Selected = selected });
+        _profiles = saved.Profiles;
+        _selected = selected;
+    });
+
+    /// <summary>The file as it is. None yet is an empty list, and so is one
+    /// that is not JSON — there is nothing in it to keep. One that cannot be
+    /// read throws, rather than be written over.</summary>
+    private static ProfileFile Read()
+    {
+        try
         {
-            _selected = null;
+            return JsonSerializer.Deserialize(File.ReadAllText(FilePath), ProfilesJson.Default.ProfileFile) ?? new();
         }
-        Write();
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException or JsonException)
+        {
+            return new();
+        }
     }
 
     /// <summary>Written beside itself and moved over the old one, so a write
     /// cut short leaves the last whole list, not half of this one.</summary>
-    private void Write()
+    private static void Write(ProfileFile file)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
         var partial = FilePath + ".partial";
-        File.WriteAllText(partial, JsonSerializer.Serialize(new ProfileFile { Profiles = _profiles, Selected = _selected }, ProfilesJson.Default.ProfileFile));
+        File.WriteAllText(partial, JsonSerializer.Serialize(file, ProfilesJson.Default.ProfileFile));
         File.Move(partial, FilePath, overwrite: true);
     }
+}
+
+/// <summary>
+/// The lock every launch of the app takes to change what they share: the
+/// profiles file and the key in Credential Manager. Held only for a read and a
+/// write, on the thread that takes it.
+/// </summary>
+internal static class Shared
+{
+    private static readonly Mutex s_mutex = new(false, @"Local\WlshareViewer");
+
+    public static T Locked<T>(Func<T> work)
+    {
+        try
+        {
+            s_mutex.WaitOne();
+        }
+        catch (AbandonedMutexException)
+        {
+            // A launch that ended holding it. What it was writing is whole or
+            // not written — both are moved into place, never written in
+            // place — and the lock is this one's now.
+        }
+        try
+        {
+            return work();
+        }
+        finally
+        {
+            s_mutex.ReleaseMutex();
+        }
+    }
+
+    public static void Locked(Action work) => Locked(() =>
+    {
+        work();
+        return 0;
+    });
 }
 
 internal sealed record ProfileFile
@@ -260,10 +323,10 @@ internal static class SafeStorage
     /// <summary>
     /// The key, from Credential Manager — made and put there by the first
     /// password saved, and never by a read: a key made when the old one is
-    /// missing opens nothing the old one sealed.
-    ///
-    /// Kept as base64 text in UTF-16, so the credential reads as an ordinary
-    /// password to anything that lists them.
+    /// missing opens nothing the old one sealed. Made under
+    /// <see cref="Shared"/>'s lock and only if it is still missing there, so
+    /// two launches saving their first password at once do not each make one
+    /// and leave a password sealed with the key that lost.
     /// </summary>
     private static byte[] MasterKey(bool creating)
     {
@@ -271,6 +334,22 @@ internal static class SafeStorage
         {
             return s_key;
         }
+        if (Stored() is { } stored)
+        {
+            return s_key = stored;
+        }
+        if (!creating)
+        {
+            throw new SafeStorageException("The key to saved passwords is gone from Credential Manager; type the password again.");
+        }
+        return s_key = Shared.Locked(() => Stored() ?? Made());
+    }
+
+    /// <summary>The key in Credential Manager, if there is one. Kept as base64
+    /// text in UTF-16, so the credential reads as an ordinary password to
+    /// anything that lists them.</summary>
+    private static byte[]? Stored()
+    {
         byte[]? found;
         try
         {
@@ -280,26 +359,27 @@ internal static class SafeStorage
         {
             throw new SafeStorageException($"Credential Manager would not give up the key to saved passwords: {e.Message}");
         }
-        if (found is not null)
+        if (found is null)
         {
-            byte[]? raw = null;
-            try
-            {
-                raw = Convert.FromBase64String(Encoding.Unicode.GetString(found));
-            }
-            catch (FormatException)
-            {
-            }
-            if (raw is not { Length: KeySize })
-            {
-                throw new SafeStorageException("The key to saved passwords in Credential Manager is not one this app made.");
-            }
-            return s_key = raw;
+            return null;
         }
-        if (!creating)
+        byte[]? raw = null;
+        try
         {
-            throw new SafeStorageException("The key to saved passwords is gone from Credential Manager; type the password again.");
+            raw = Convert.FromBase64String(Encoding.Unicode.GetString(found));
         }
+        catch (FormatException)
+        {
+        }
+        if (raw is not { Length: KeySize })
+        {
+            throw new SafeStorageException("The key to saved passwords in Credential Manager is not one this app made.");
+        }
+        return raw;
+    }
+
+    private static byte[] Made()
+    {
         var made = RandomNumberGenerator.GetBytes(KeySize);
         try
         {
@@ -309,6 +389,6 @@ internal static class SafeStorage
         {
             throw new SafeStorageException($"Credential Manager would not keep the key to saved passwords: {e.Message}");
         }
-        return s_key = made;
+        return made;
     }
 }

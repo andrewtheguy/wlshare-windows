@@ -90,12 +90,22 @@ checkbox and `--encoding zrle` for the encoding, which is VP9 without it.
 Every connection made from the form is to a profile. **Connect** writes the form
 into the selected one, or makes a new one of it when none is selected, so the
 list is the history too; the form is also written back when the selection
-moves and when the window closes, and one that cannot be — a port that is not
-one, a password that will not seal — keeps the window open with the reason on
-it. A row is two lines of text, the name and who goes where, and nothing is
-captured from the desktop to put beside it. The profiles, and which one was
-showing, are `%LOCALAPPDATA%\wlshare\profiles.json`, written beside itself and
-moved into place.
+moves and when the window closes. Only a port that is not one keeps the
+window open, with the reason on it; a list or a password that will not save
+would fail the same way at every try, so the window closes past it. A row is
+two lines of text, the name and who goes where, and nothing is captured from
+the desktop to put beside it. The profiles, and which one was showing, are
+`%LOCALAPPDATA%\wlshare\profiles.json`, written beside itself and moved into
+place.
+
+Every launch is a process of its own over that one file, so nothing is written
+from what a launch read when it started. A change takes a named mutex that
+every launch shares (`Local\WlshareViewer`), reads the file again, makes itself
+there and writes it back — and only once it is written is it the launch's list,
+so a change that fails is not kept to be written later by another. A profile
+another launch added shows up in the list the next time this one saves. The
+same mutex makes the key: the first launch to save a password makes it, and
+one saving at the same time finds it already there.
 
 A password is saved only for a profile whose **Save the password** is ticked,
 and it is saved sealed, the way Chrome's and Slack's Safe Storage do it.
