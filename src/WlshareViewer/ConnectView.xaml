@@ -25,10 +25,11 @@
                               SelectionChanged="OnSelectionChanged" DoubleTapped="OnListDoubleTapped" />
                 </Border>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4">
-                    <Button x:Name="AddButton" ToolTipService.ToolTip="New desktop" Click="OnAdd">
+                    <Button x:Name="AddButton" ToolTipService.ToolTip="New desktop" AutomationProperties.Name="New desktop" Click="OnAdd">
                         <SymbolIcon Symbol="Add" />
                     </Button>
-                    <Button x:Name="RemoveButton" ToolTipService.ToolTip="Delete this desktop" Click="OnRemove">
+                    <Button x:Name="RemoveButton" ToolTipService.ToolTip="Delete this desktop"
+                            AutomationProperties.Name="Delete this desktop" Click="OnRemove">
                         <SymbolIcon Symbol="Remove" />
                     </Button>
                 </StackPanel>

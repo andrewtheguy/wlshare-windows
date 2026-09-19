@@ -64,7 +64,6 @@ internal sealed partial class ConnectView : UserControl
         Select(profile);
         var tried = (profile is { } id ? Profiles.Find(id) : null) ?? Profile.From(destination);
         Fill(tried with { Audio = destination.Audio, Encoding = destination.Encoding });
-        PasswordBox.Password = destination.Password;
     }
 
     /// <summary>Say why the form is back if there is a reason, and put the
@@ -80,8 +79,15 @@ internal sealed partial class ConnectView : UserControl
     }
 
     /// <summary>Keep what is typed into the form, for a window about to close.
-    /// False when it cannot be kept, with the reason on the form.</summary>
-    public bool Save() => Commit();
+    /// False only when there is something to correct — a port that is not one —
+    /// with the reason on the form; a list or password that will not save is
+    /// no reason to keep the window, since closing again would fail the same
+    /// way.</summary>
+    public bool Save()
+    {
+        Commit();
+        return TryPort(out _);
+    }
 
     // ── The form ────────────────────────────────────────────────────────────
 
@@ -103,15 +109,23 @@ internal sealed partial class ConnectView : UserControl
         RemoveButton.IsEnabled = _current is not null;
     }
 
+    /// <summary>The port box's port: 5900 when it is empty, false when it
+    /// holds something that is not a port.</summary>
+    private bool TryPort(out ushort port)
+    {
+        port = 5900;
+        var text = PortBox.Text.Trim();
+        return text.Length == 0
+            || (ushort.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out port) && port != 0);
+    }
+
     /// <summary>Write the form into the profile it is showing — or, with
     /// <paramref name="creating"/>, into a new one when it is showing none.
     /// False, with the reason on the form, when the port is not a port, the
     /// password would not seal or the list would not save.</summary>
     private bool Commit(bool creating = false)
     {
-        var portText = PortBox.Text.Trim();
-        ushort port = 5900;
-        if (portText.Length > 0 && (!ushort.TryParse(portText, NumberStyles.None, CultureInfo.InvariantCulture, out port) || port == 0))
+        if (!TryPort(out var port))
         {
             Fail("A port is a number from 1 to 65535.", PortBox);
             return false;

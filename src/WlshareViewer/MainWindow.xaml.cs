@@ -29,8 +29,8 @@ internal sealed partial class MainWindow : Window
         // Ends the session and joins its thread while there is still a window
         // for its callbacks to have reached.
         Closed += (_, _) => EndSession();
-        // Not while the form holds something that cannot be saved: it stays up
-        // with the reason on it.
+        // Not while the form holds something to correct: it stays up with the
+        // reason on it.
         AppWindow.Closing += (_, e) =>
         {
             if (Form.Visibility == Visibility.Visible && !Form.Save())
@@ -59,20 +59,21 @@ internal sealed partial class MainWindow : Window
         {
             // The password saved for the same place and user, if any. One that
             // will not open is not tried as none: the form says why, and is
-            // where it is typed.
+            // where it is typed. The form gets the destination without it, so a
+            // retry does not show it.
             var profile = Form.Profiles.Matching(fromArguments);
+            Form.Load(fromArguments, profile?.Id);
+            Destination attempt;
             try
             {
-                fromArguments = fromArguments with { Password = profile?.Password() ?? "" };
+                attempt = fromArguments with { Password = profile?.Password() ?? "" };
             }
             catch (SafeStorageException e)
             {
-                Form.Load(fromArguments, profile?.Id);
                 Ask(e.Message);
                 return;
             }
-            Form.Load(fromArguments, profile?.Id);
-            Open(fromArguments);
+            Open(attempt);
         }
         else
         {
