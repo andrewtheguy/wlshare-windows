@@ -7,7 +7,8 @@ speaks the whole RFB session.
 **Scope:** the screen, the keyboard, the pointer, the clipboard and the
 desktop's sound. The screen arrives as wlshare's VP9 stream — the whole
 desktop, 4:4:4, at the server's `vp9_quality` or, while the link is behind,
-lower, down to its `vp9_quality_min` — or, when the connect form's **Encoding**
+lower, down to its `vp9_quality_min`, and sharpened back to `vp9_quality` half
+a second after the desktop goes quiet — or, when the connect form's **Encoding**
 says so, as exact ZRLE. VP9 is asked for alone: a server without it ends the
 session with an error instead of sending ZRLE, and the session's title ends in
 `· VP9` when the form chose it. The desktop is asked to be
