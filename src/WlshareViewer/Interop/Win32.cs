@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Input;
 using WinRT;
@@ -6,8 +7,9 @@ namespace WlshareViewer.Interop;
 
 /// <summary>
 /// The few things WinUI does not say and Win32 does: what character a key
-/// types, a pointer shape made from pixels, and the clipboard as it is at this
-/// moment rather than when an async call gets round to it.
+/// types, a pointer shape made from pixels, the clipboard as it is at this
+/// moment rather than when an async call gets round to it, and a secret in
+/// Credential Manager.
 /// </summary>
 internal static unsafe partial class Win32
 {
@@ -376,4 +378,84 @@ internal static unsafe partial class Win32
     [LibraryImport("gdi32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool DeleteObject(nint handle);
+
+    // ── Credential Manager ──────────────────────────────────────────────────
+
+    private const uint CredTypeGeneric = 1;
+    /// <summary>Kept for this user on this machine, and not roamed with a
+    /// domain profile.</summary>
+    private const uint CredPersistLocalMachine = 2;
+    private const int ErrorNotFound = 1168;
+
+    /// <summary>The secret of the generic credential <paramref name="target"/>,
+    /// or null when there is none. Anything else Credential Manager says is a
+    /// <see cref="Win32Exception"/>.</summary>
+    public static byte[]? ReadCredential(string target)
+    {
+        if (!CredRead(target, CredTypeGeneric, 0, out var found))
+        {
+            var error = Marshal.GetLastPInvokeError();
+            return error == ErrorNotFound ? null : throw new Win32Exception(error);
+        }
+        try
+        {
+            return new ReadOnlySpan<byte>(found->CredentialBlob, (int)found->CredentialBlobSize).ToArray();
+        }
+        finally
+        {
+            CredFree(found);
+        }
+    }
+
+    /// <summary>Make the generic credential <paramref name="target"/>, or
+    /// replace the one there, with <paramref name="secret"/>.</summary>
+    public static void WriteCredential(string target, string user, ReadOnlySpan<byte> secret)
+    {
+        fixed (char* targetName = target, userName = user)
+        fixed (byte* blob = secret)
+        {
+            var credential = new Credential
+            {
+                Type = CredTypeGeneric,
+                TargetName = targetName,
+                UserName = userName,
+                CredentialBlob = blob,
+                CredentialBlobSize = (uint)secret.Length,
+                Persist = CredPersistLocalMachine,
+            };
+            if (!CredWrite(&credential, 0))
+            {
+                throw new Win32Exception(Marshal.GetLastPInvokeError());
+            }
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Credential
+    {
+        public uint Flags;
+        public uint Type;
+        public char* TargetName;
+        public char* Comment;
+        /// <summary>A FILETIME, which is 8-aligned here either way.</summary>
+        public long LastWritten;
+        public uint CredentialBlobSize;
+        public byte* CredentialBlob;
+        public uint Persist;
+        public uint AttributeCount;
+        public nint Attributes;
+        public char* TargetAlias;
+        public char* UserName;
+    }
+
+    [LibraryImport("advapi32.dll", EntryPoint = "CredReadW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CredRead(string target, uint type, uint flags, out Credential* credential);
+
+    [LibraryImport("advapi32.dll", EntryPoint = "CredWriteW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool CredWrite(Credential* credential, uint flags);
+
+    [LibraryImport("advapi32.dll")]
+    private static partial void CredFree(void* buffer);
 }

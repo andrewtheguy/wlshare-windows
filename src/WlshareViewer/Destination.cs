@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace WlshareViewer;
@@ -17,26 +16,25 @@ internal enum PixelEncoding
 }
 
 /// <summary>
-/// A desktop to connect to, and what is remembered about it between launches.
-///
-/// The host, the port, the user name, the encoding and whether to play the
-/// desktop's sound are remembered, in %LOCALAPPDATA%\wlshare\settings.json.
-/// The password is not: it is typed into the form each time, and a file is no
-/// place for one.
+/// A desktop to connect to: what one session is opened with. What is kept
+/// between launches is a <see cref="Profile"/>.
 /// </summary>
 internal sealed record Destination
 {
     public string Host { get; init; } = "";
     public ushort Port { get; init; } = 5900;
     public string Username { get; init; } = "";
-    [JsonIgnore]
     public string Password { get; init; } = "";
     /// <summary>Ask for the desktop's sound. A server without it gives none
     /// either way.</summary>
     public bool Audio { get; init; }
     public PixelEncoding Encoding { get; init; } = PixelEncoding.Vp9;
 
-    public string Label => Host.Contains(':') ? $"[{Host}]:{Port}" : $"{Host}:{Port}";
+    public string Label => Format(Host, Port);
+
+    /// <summary>`host:port`, with an IPv6 literal in brackets.</summary>
+    public static string Format(string host, ushort port) =>
+        host.Contains(':') ? $"[{host}]:{port}" : $"{host}:{port}";
 
     /// <summary>
     /// The command line, for a launch that came from a shell:
@@ -47,9 +45,10 @@ internal sealed record Destination
     /// --encoding is the form's encoding, vp9 (the default) or zrle.
     /// Null when no --server was given, which is every launch from the Start
     /// menu — those get the form. There is no password argument: an argument
-    /// list is in the shell's history and in every process listing. A launch
-    /// from here connects without one, and a desktop that wants one refuses and
-    /// brings the form back to type it into.
+    /// list is in the shell's history and in every process listing. A saved one
+    /// comes from the profile that goes to the same place as the same user;
+    /// anything else is typed into the form, which is what a refused connection
+    /// brings back.
     /// </summary>
     public static Destination? FromArguments(string[] args)
     {
@@ -65,12 +64,11 @@ internal sealed record Destination
             return null;
         }
         var (host, port) = Split(server);
-        return Remembered() with
+        return new Destination
         {
             Host = host,
             Port = port,
             Username = Value("--username") ?? "",
-            Password = "",
             Audio = args.Contains("--audio"),
             Encoding = string.Equals(Value("--encoding"), "zrle", StringComparison.OrdinalIgnoreCase) ? PixelEncoding.Zrle : PixelEncoding.Vp9,
         };
@@ -94,43 +92,4 @@ internal sealed record Destination
         }
         return (server[..colon], parsed);
     }
-
-    private static string SettingsPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "wlshare", "settings.json");
-
-    /// <summary>What the form opens filled with.</summary>
-    public static Destination Remembered()
-    {
-        try
-        {
-            var saved = JsonSerializer.Deserialize(File.ReadAllText(SettingsPath), SettingsJson.Default.Destination);
-            if (saved is not null)
-            {
-                return saved with { Port = saved.Port == 0 ? (ushort)5900 : saved.Port };
-            }
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
-        {
-            // Nothing remembered yet, or nothing readable: the form starts empty.
-        }
-        return new Destination();
-    }
-
-    /// <summary>Remember this one, without its password.</summary>
-    public void Save()
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(this, SettingsJson.Default.Destination));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // Not remembering is not a reason to stop connecting.
-        }
-    }
 }
-
-[JsonSourceGenerationOptions(WriteIndented = true)]
-[JsonSerializable(typeof(Destination))]
-internal sealed partial class SettingsJson : JsonSerializerContext;

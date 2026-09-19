@@ -81,16 +81,53 @@ one `ClientDensity`.
 
 ## Where a session begins
 
-`ConnectView` is a form for the host, the port, the user name, the password,
-the **Encoding** and **Play the desktop's sound**, and it is what the app opens
+`ConnectView` is the saved desktops as a list beside a form for the one
+selected — a name, the host, the port, the user name, the password, the
+**Encoding** and **Play the desktop's sound** — and it is what the app opens
 on. `--server host:port` on the command line skips it, with `--audio` for the
 checkbox and `--encoding zrle` for the encoding, which is VP9 without it.
 
-The host, the port, the user name, the encoding and the sound checkbox are
-remembered in
-`%LOCALAPPDATA%\wlshare\settings.json`. The password is not, anywhere — a file
-is no place for one — and it is not a command-line argument either, because an
-argument list is in the shell's history and every process listing.
+Every connection made from the form is to a profile. **Connect** writes the form
+into the selected one, or makes a new one of it when none is selected, so the
+list is the history too; the form is also written back when the selection
+moves and when the window closes. Only a port that is not one keeps the
+window open, with the reason on it; a list or a password that will not save
+would fail the same way at every try, so the window closes past it. A row is
+two lines of text, the name and who goes where, and nothing is captured from
+the desktop to put beside it. The profiles, and which one was showing, are
+`%LOCALAPPDATA%\wlshare\profiles.json`, written beside itself and moved into
+place.
+
+Every launch is a process of its own over that one file, so nothing is written
+from what a launch read when it started. A change takes a named mutex that
+every launch shares (`Local\WlshareViewer`), reads the file again, makes itself
+there and writes it back — and only once it is written is it the launch's list,
+so a change that fails is not kept to be written later by another. A profile
+another launch added shows up in the list the next time this one saves. The
+same mutex makes the key: the first launch to save a password makes it, and
+one saving at the same time finds it already there.
+
+A password is saved only for a profile whose **Save the password** is ticked,
+and it is saved sealed, the way Chrome's and Slack's Safe Storage do it.
+Credential Manager holds exactly one generic credential, `WlshareViewer Safe
+Storage`: 32 random bytes, base64, made the first time a password is saved and
+never by a read — a key made when the old one has gone would open nothing the
+old one sealed. `SafeStorage` seals each password with AES-GCM under that key,
+with the profile's id as the associated data so a sealed password moved onto
+another profile does not open, and the result sits in the profile beside its
+host. The key is read from Credential Manager at most once a launch.
+
+A saved password is opened only to connect with, never to show: the form's
+field stays empty with *saved* as its placeholder, and what is typed there
+replaces it. A credential Credential Manager will not give up, or a sealed
+password the key does not open, is a message on the form and not a connection
+attempted without it.
+
+The password is not a command-line argument, because an argument list is in the
+shell's history and every process listing. A `--server` launch takes the
+password saved in the first profile with the same host, port and user name, and
+a destination with none — or one that is refused — ends up at the form, which
+is the only place a password is ever typed.
 
 A session ends where it began. A refused connection, a dropped one and
 **Disconnect** all put the form back with the reason on it.
