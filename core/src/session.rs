@@ -923,7 +923,13 @@ impl Live {
             None => self.vp9.insert(Vp9Decoder::new().context("starting the VP9 decoder")?),
         };
         let (w, h) = (usize::from(width), usize::from(height));
-        self.scratch.resize(w * h * 4, 0);
+        // As fallible as the framebuffer's own: a desktop there is not the
+        // memory for twice ends the session, not the process.
+        let len = w * h * 4;
+        self.scratch
+            .try_reserve_exact(len.saturating_sub(self.scratch.len()))
+            .with_context(|| format!("allocating a {width}x{height} VP9 frame"))?;
+        self.scratch.resize(len, 0);
         decoder.decode_rect(frame, w, h, &mut self.scratch, w * 4).with_context(|| format!("decoding a {width}x{height} VP9 frame"))?;
         let mut fb = self.shared.framebuffer.lock().unwrap();
         if !fb.put_raw(0, 0, width, height, &self.scratch) {
