@@ -51,9 +51,10 @@ pwsh scripts/package-windows.ps1   # dist\package\WlshareViewer-windows-x64.msi
   Visual Studio Build Tools' C++ workload.
 - The .NET 10 SDK. The Windows App SDK, Win2D and WiX all arrive as NuGet
   packages; no Visual Studio workload beyond the C++ one is needed.
-- PowerShell 7. The core links `wlshare-rfb`, where every protocol byte comes
-  from, pinned in `core/Cargo.toml` to a released tag of the `wlshare` repo and
-  fetched by cargo — no sibling checkout needed.
+- PowerShell 7. The core links `wlshare-client`, the session both native
+  clients are built on, and `wlshare-rfb` under it, where every protocol byte
+  comes from — pinned in `core/Cargo.toml` to a released tag of the `wlshare`
+  repo and fetched by cargo, no sibling checkout needed.
 
 ## Connecting
 
@@ -89,8 +90,9 @@ pwsh ci/windows/remote.ps1 ci    # all of it on the Windows CI VM, from any mach
 ```
 
 `core/` builds and tests on Linux and macOS too, and that is the fast loop: the
-protocol, the decoders and the session state machine have nothing Windows in
-them.
+key and wheel tables and the ABI are plain Rust, and the session under them —
+the protocol, the decoders and the state machine — is `wlshare-client`'s, which
+has its own tests in the `wlshare` repo.
 
 ## Releasing
 
@@ -103,8 +105,8 @@ has a tag is refused.
 
 ## Layout
 
-- `core/` — the Rust crate: session, framebuffer, keysym and wheel tables, and
-  the C ABI in `src/ffi.rs`.
+- `core/` — the Rust crate: `wlshare-client`'s session with the Windows key and
+  wheel tables and the C ABI in `src/ffi.rs` on top.
 - `src/WlshareViewer/` — the app: the form, the window, the Win2D view, the
   input, and `Interop/Native.cs`, the ABI's other half.
 - `installer/` — the WiX 5 MSI.
