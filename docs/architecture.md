@@ -34,8 +34,9 @@ somebody's `../wlshare`.
 
 The screen, the keyboard, the pointer, the scale the desktop is drawn at,
 which follows the screen's, the clipboard, and the desktop's sound when it is
-asked for. The client lists ZRLE, Raw, Cursor, Cursor With Alpha, DesktopSize,
-ExtendedDesktopSize, Fence, ContinuousUpdates, the density extension, Extended
+asked for. The client lists wlshare's VP9 encoding alone as its pixel
+encoding — or, when the form says ZRLE, ZRLE and Raw — then Cursor, Cursor With
+Alpha, DesktopSize, ExtendedDesktopSize, Fence, ContinuousUpdates, the density extension, Extended
 Clipboard and — only when the form's sound checkbox is ticked — the audio
 extension, and nothing else. The server never offers camera, microphone or
 output selection; sound that arrives unasked is framed and dropped rather than
@@ -73,12 +74,13 @@ one `ClientDensity`.
 
 ## Where a session begins
 
-`ConnectView` is a form for the host, the port, the user name, the password
-and **Play the desktop's sound**, and it is what the app opens on.
-`--server host:port` on the command line skips it, with `--audio` for the
-checkbox.
+`ConnectView` is a form for the host, the port, the user name, the password,
+the **Encoding** and **Play the desktop's sound**, and it is what the app opens
+on. `--server host:port` on the command line skips it, with `--audio` for the
+checkbox and `--encoding zrle` for the encoding, which is VP9 without it.
 
-The host, the port, the user name and the sound checkbox are remembered in
+The host, the port, the user name, the encoding and the sound checkbox are
+remembered in
 `%LOCALAPPDATA%\wlshare\settings.json`. The password is not, anywhere — a file
 is no place for one — and it is not a command-line argument either, because an
 argument list is in the shell's history and every process listing.
@@ -123,6 +125,36 @@ uploaded with one `SetPixelBytes`. At rest the bitmap is drawn at its own size i
 device pixels with nearest-neighbour sampling — a copy, not a filter — and only
 while the desktop is catching up with a resize or a change of scale is it
 fitted to the view and filtered.
+
+### VP9
+
+wlshare's VP9 encoding is the whole framebuffer as one stream: every update is
+one rectangle covering it, and each frame is coded against the frames before
+it, so one decoder, made at the first frame, takes them all in order. What the
+stream is — 8-bit 4:4:4 at BT.601 studio swing, a quantizer the server moves
+between `vp9_quality` and `vp9_quality_min` as the link keeps up or falls
+behind, keyframes only at a new size or a full repaint — is the server's and
+`wlshare-rfb`'s; see wlshare's `docs/architecture.md`. The decoder writes the
+same `B, G, R, X` as every other rectangle, so the path from the framebuffer to
+the screen does not know which encoding filled it. libvpx comes with
+`wlshare-rfb`, as a static archive its `libvpx-prebuilt-sys` dependency
+downloads for `x86_64-pc-windows-msvc` and links into the DLL; nothing beside
+the DLL ships for it.
+
+It is the default, because it is what makes a desktop that moves cheap to
+watch, and it is not exact: a desktop that settles is shown at the server's
+quality, not pixel for pixel. **ZRLE** on the form is the exact picture. VP9 is
+never a request ZRLE answers: it is listed with no pixel encoding behind it, and
+a Raw or ZRLE rectangle in a VP9 session — what any server without the
+encoding, a generic VNC server or a wlshare older than it, sends to a list it
+does not understand — ends the session with an error that says to choose ZRLE,
+rather than showing a picture that is not the one chosen. The session title's
+`· VP9` therefore follows the form.
+
+A frame is decoded with the framebuffer's lock let go, into a buffer of the
+session's own, and copied in under it: a whole-desktop decode is milliseconds,
+and the window must not wait on it to draw. Only the session resizes the
+framebuffer, so its size cannot change between the two.
 
 ## The pointer
 
@@ -225,7 +257,7 @@ waiting for that much rather than playing each frame the instant it lands; past
 300 ms the oldest sound is dropped back down to 60, so a stall followed by a
 burst costs a skip rather than a delay that never goes away. Sound shares the
 TCP stream with the pixels, and wlshare sends it ahead of every framebuffer
-update, so a large ZRLE frame delays it by no more than its own transfer.
+update, so a large frame delays it by no more than its own transfer.
 
 ## The C ABI
 

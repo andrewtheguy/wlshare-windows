@@ -54,7 +54,13 @@ internal sealed unsafe class Client : IDisposable
 
     public Client(Destination destination, Surface surface, DispatcherQueue queue, Action onChange)
     {
-        _handle = Native.Connect(destination.Host, destination.Port, destination.Username, destination.Password, destination.Audio, surface.Width, surface.Height, surface.Scale);
+        _handle = Native.Connect(destination.Host, destination.Port, destination.Username, destination.Password, destination.Audio,
+            destination.Encoding switch
+            {
+                PixelEncoding.Zrle => Native.EncodingZrle,
+                _ => Native.EncodingVp9,
+            },
+            surface.Width, surface.Height, surface.Scale);
         _wake = new Wake(queue, onChange);
         _wakeHandle = GCHandle.Alloc(_wake);
         Native.OnFrame(_handle, &OnWake, GCHandle.ToIntPtr(_wakeHandle));

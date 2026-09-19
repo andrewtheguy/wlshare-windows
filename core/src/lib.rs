@@ -16,7 +16,8 @@
 //! buffer the Windows audio device takes from through [`Client::read_audio`],
 //! on its own clock.
 //!
-//! **Scope.** The screen, the keyboard, the pointer, the desktop's scale — 1×
+//! **Scope.** The screen — as wlshare's VP9 stream or as exact ZRLE,
+//! whichever the window chose — the keyboard, the pointer, the desktop's scale — 1×
 //! or 2×, chosen by the window — the clipboard, as text both ways, and the
 //! desktop's sound. The camera, the microphone and picking an output are
 //! wlshare extensions this client does not list, so the server never sends
@@ -36,7 +37,7 @@ use std::thread::JoinHandle;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 pub use framebuffer::{Framebuffer, Region};
-pub use session::{Command, Config, Shared, State, Status, Surface};
+pub use session::{Command, Config, Encoding, Shared, State, Status, Surface};
 pub use wheel::{WHEEL_DELTA, WHEEL_DOWN, WHEEL_LEFT, WHEEL_RIGHT, WHEEL_UP, Wheel};
 
 /// The three real buttons of the RFB button mask. The four above them are the
@@ -197,7 +198,7 @@ mod tests {
     fn nowhere() -> Config {
         // Port 0 never connects, which is the point: the session must fail into
         // the status rather than take the thread down with it.
-        Config { host: "127.0.0.1".to_owned(), port: 0, username: String::new(), password: String::new(), audio: false }
+        Config { host: "127.0.0.1".to_owned(), port: 0, username: String::new(), password: String::new(), audio: false, encoding: Encoding::Zrle }
     }
 
     #[test]
@@ -253,7 +254,7 @@ mod tests {
         // session is left waiting for the server's version.
         let accept = std::thread::spawn(move || listener.accept().expect("the client's connection").0);
 
-        let config = Config { host: "127.0.0.1".to_owned(), port, username: String::new(), password: String::new(), audio: false };
+        let config = Config { host: "127.0.0.1".to_owned(), port, username: String::new(), password: String::new(), audio: false, encoding: Encoding::Zrle };
         let client = Client::connect(config, Surface { width: 800, height: 600, scale: 2.0 });
         let _socket = accept.join().expect("the accepting thread");
 

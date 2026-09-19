@@ -68,6 +68,11 @@ internal static unsafe partial class Native
     public const int StateReady = 1;
     public const int StateClosed = 2;
 
+    // How the desktop's pixels arrive: wlshare's VP9 stream, 4:4:4 at a
+    // quality the server lowers while the link is behind, or exact ZRLE.
+    public const byte EncodingVp9 = 0;
+    public const byte EncodingZrle = 1;
+
     // The three real buttons of the RFB button mask; the wheel's four come out
     // of Wheel.
     public const byte ButtonLeft = 1;
@@ -76,9 +81,10 @@ internal static unsafe partial class Native
 
     // Start a session. Never null: a connection that fails does so in the
     // status. An empty password asks for the None security type, any other for
-    // RSA-AES. `audio` asks for the desktop's sound.
+    // RSA-AES. `audio` asks for the desktop's sound. `encoding` is one of the
+    // Encoding* values; anything else is VP9.
     [LibraryImport(Dll, EntryPoint = "wlshare_client_connect", StringMarshalling = StringMarshalling.Utf8)]
-    internal static partial nint Connect(string host, ushort port, string username, string password, [MarshalAs(UnmanagedType.U1)] bool audio, ushort surfaceWidth, ushort surfaceHeight, double scale);
+    internal static partial nint Connect(string host, ushort port, string username, string password, [MarshalAs(UnmanagedType.U1)] bool audio, byte encoding, ushort surfaceWidth, ushort surfaceHeight, double scale);
 
     // End the session and wait for its thread. The wake callback is cleared
     // first, so nothing calls back into the app after this returns.

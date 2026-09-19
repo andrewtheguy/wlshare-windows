@@ -7,9 +7,15 @@
 //!
 //! What it speaks, and why:
 //!
-//! - **ZRLE**, on one inflate stream for the whole connection, decoded straight
-//!   into the framebuffer. Raw is listed too because the server sends it before
-//!   the first `SetEncodings` and there is no arranging otherwise.
+//! - **VP9 or ZRLE**, as the window chose, and nothing else. VP9 is wlshare's
+//!   own encoding for a desktop client: the whole framebuffer as one 4:4:4
+//!   stream at the quality the server sets, decoded by one decoder for
+//!   the connection off the framebuffer's lock and copied in under it. It is
+//!   listed alone, and pixels in any other encoding end the session: a server
+//!   without VP9 is an error to be told about, not a picture to fall back to.
+//!   ZRLE is exact, on one inflate stream for the whole connection, decoded
+//!   straight into the framebuffer, with Raw listed behind it because the RFC
+//!   has every server able to send it.
 //! - **The server's own pixel format.** Asking for `XRGB8888` is asking for the
 //!   framebuffer's bytes as they are, which is also what the window's bitmap
 //!   reads; no pixel is swizzled anywhere between the compositor and the screen.
@@ -55,23 +61,23 @@ use wlshare_rfb::density::from_fixed;
 use wlshare_rfb::msg::{FENCE_REQUEST, PROTOCOL_VERSION, SECURITY_NONE};
 use wlshare_rfb::pixel::PixelFormat;
 use wlshare_rfb::rsa_aes::{self, ClientKey, Credentials, FrameReader, Sealer, Strength};
+use wlshare_rfb::vp9::Vp9Decoder;
 use wlshare_rfb::zrle::ZrleDecoder;
 use wlshare_rfb::{
     ENCODING_AUDIO, ENCODING_CONTINUOUS_UPDATES, ENCODING_CURSOR, ENCODING_CURSOR_WITH_ALPHA, ENCODING_DENSITY,
-    ENCODING_DESKTOP_SIZE, ENCODING_EXTENDED_DESKTOP_SIZE, ENCODING_FENCE, ENCODING_RAW, ENCODING_ZRLE,
+    ENCODING_DESKTOP_SIZE, ENCODING_EXTENDED_DESKTOP_SIZE, ENCODING_FENCE, ENCODING_RAW, ENCODING_VP9, ENCODING_ZRLE,
 };
 
 use crate::audio::{self, Playback};
 use crate::framebuffer::Framebuffer;
 
-/// Listed in the client's order of preference, and deliberately short: a
-/// pseudo-encoding here is a promise to understand what it turns on, and
-/// [`client::parse`] ends the connection over a rectangle nobody asked for.
+/// The pseudo-encodings every session lists, and deliberately few: each is a
+/// promise to understand what it turns on, and [`Live::apply`] ends the
+/// connection over a rectangle nobody asked for. The pixel encodings go in
+/// front of them — [`ENCODING_VP9`] alone, or ZRLE and Raw — and
 /// [`ENCODING_AUDIO`] follows them when the window asked for sound
 /// ([`encodings`]).
 const ENCODINGS: &[i32] = &[
-    ENCODING_ZRLE,
-    ENCODING_RAW,
     ENCODING_CURSOR_WITH_ALPHA,
     ENCODING_CURSOR,
     ENCODING_EXTENDED_DESKTOP_SIZE,
@@ -82,8 +88,13 @@ const ENCODINGS: &[i32] = &[
     clipboard::ENCODING,
 ];
 
-fn encodings(audio: bool) -> Vec<i32> {
-    let mut encodings = ENCODINGS.to_vec();
+fn encodings(encoding: Encoding, audio: bool) -> Vec<i32> {
+    let mut encodings = Vec::with_capacity(ENCODINGS.len() + 3);
+    match encoding {
+        Encoding::Vp9 => encodings.push(ENCODING_VP9),
+        Encoding::Zrle => encodings.extend_from_slice(&[ENCODING_ZRLE, ENCODING_RAW]),
+    }
+    encodings.extend_from_slice(ENCODINGS);
     if audio {
         encodings.push(ENCODING_AUDIO);
     }
@@ -116,6 +127,19 @@ pub struct Config {
     /// Whether to ask for the desktop's sound. A server without the audio
     /// extension ignores the asking.
     pub audio: bool,
+    /// How the desktop's pixels are to arrive.
+    pub encoding: Encoding,
+}
+
+/// How the window wants the desktop's pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Encoding {
+    /// wlshare's VP9 encoding: the whole desktop as one 4:4:4 stream at the
+    /// quality the server sets. Small and smooth when it moves, not exact.
+    /// Nothing else is listed, so a server without it ends the session.
+    Vp9,
+    /// ZRLE: every pixel exactly as the desktop drew it.
+    Zrle,
 }
 
 /// What the window asks the desktop to be: its size in device pixels, and the
@@ -330,11 +354,14 @@ async fn connect_and_run(config: Config, surface: Surface, shared: &Arc<Shared>,
 
     // The server's own format, so that nothing on this path swizzles a pixel.
     writer.send(&client::set_pixel_format(&Framebuffer::FORMAT)).await?;
-    writer.send(&client::set_encodings(&encodings(config.audio))).await?;
+    writer.send(&client::set_encodings(&encodings(config.encoding, config.audio))).await?;
 
     let mut session = Live {
         shared: Arc::clone(shared),
         zrle: ZrleDecoder::default(),
+        encoding: config.encoding,
+        vp9: None,
+        scratch: Vec::new(),
         format: Framebuffer::FORMAT,
         surface,
         asked_scale: None,
@@ -493,6 +520,14 @@ async fn finish_handshake<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(reader: &
 struct Live {
     shared: Arc<Shared>,
     zrle: ZrleDecoder,
+    /// What the window asked for, which decides whether a VP9 rectangle is one.
+    encoding: Encoding,
+    /// The connection's VP9 decoder, made at its first frame: every frame is
+    /// coded against the ones before it, so one decoder takes them all.
+    vp9: Option<Vp9Decoder>,
+    /// A VP9 frame decoded, before it is copied into the framebuffer: the
+    /// decode is too long to hold the window's lock for.
+    scratch: Vec<u8>,
     format: PixelFormat,
     /// The window's surface as it last said.
     surface: Surface,
@@ -798,6 +833,7 @@ impl Live {
         log::trace!("a {} rectangle of {width}x{height} at {x},{y}", match &body {
             RectBody::Raw(_) => "Raw",
             RectBody::Zrle(_) => "ZRLE",
+            RectBody::Vp9(_) => "VP9",
             RectBody::DesktopSize => "DesktopSize",
             RectBody::ExtendedDesktopSize { .. } => "ExtendedDesktopSize",
             RectBody::Cursor { .. } => "Cursor",
@@ -805,6 +841,9 @@ impl Live {
             RectBody::Audio => "Audio",
         });
         match body {
+            RectBody::Raw(_) | RectBody::Zrle(_) if self.encoding == Encoding::Vp9 => {
+                bail!("the server does not have wlshare's VP9 encoding — it is not wlshare, or a wlshare older than 0.0.30; choose ZRLE to connect to it")
+            }
             RectBody::Raw(pixels) => {
                 let mut fb = self.shared.framebuffer.lock().unwrap();
                 if !fb.put_raw(x, y, width, height, &pixels) {
@@ -822,6 +861,10 @@ impl Live {
                     .decode_rect(&payload, usize::from(width), usize::from(height), &self.format, out, stride)
                     .with_context(|| format!("decoding a {width}x{height} ZRLE rectangle at {x},{y}"))?;
                 fb.damage_rect(x, y, width, height);
+                Ok(Applied::Drew)
+            }
+            RectBody::Vp9(frame) => {
+                self.apply_vp9(x, y, width, height, &frame)?;
                 Ok(Applied::Drew)
             }
             RectBody::DesktopSize => {
@@ -859,6 +902,40 @@ impl Live {
         }
     }
 
+    /// One frame of the VP9 stream, which is the whole framebuffer. It is
+    /// decoded with the framebuffer's lock let go — the session is the only
+    /// thing that resizes it, so its size cannot change meanwhile — and copied
+    /// in under it.
+    fn apply_vp9(&mut self, x: u16, y: u16, width: u16, height: u16, frame: &[u8]) -> anyhow::Result<()> {
+        if self.encoding != Encoding::Vp9 {
+            bail!("a VP9 rectangle, which this session never asked for");
+        }
+        let size = {
+            let fb = self.shared.framebuffer.lock().unwrap();
+            (fb.width(), fb.height())
+        };
+        if (x, y, width, height) != (0, 0, size.0, size.1) {
+            bail!("a VP9 rectangle of {width}x{height} at {x},{y}, where the framebuffer is {}x{}", size.0, size.1);
+        }
+        let first = self.vp9.is_none();
+        let decoder = match &mut self.vp9 {
+            Some(decoder) => decoder,
+            None => self.vp9.insert(Vp9Decoder::new().context("starting the VP9 decoder")?),
+        };
+        let (w, h) = (usize::from(width), usize::from(height));
+        self.scratch.resize(w * h * 4, 0);
+        decoder.decode_rect(frame, w, h, &mut self.scratch, w * 4).with_context(|| format!("decoding a {width}x{height} VP9 frame"))?;
+        let mut fb = self.shared.framebuffer.lock().unwrap();
+        if !fb.put_raw(0, 0, width, height, &self.scratch) {
+            bail!("a {width}x{height} VP9 frame does not fit a {}x{} framebuffer", fb.width(), fb.height());
+        }
+        drop(fb);
+        if first {
+            log::info!("the desktop arrives as VP9");
+        }
+        Ok(())
+    }
+
     fn resize(&mut self, width: u16, height: u16) -> anyhow::Result<()> {
         log::info!("the desktop is now {width}x{height}");
         self.shared.framebuffer.lock().unwrap().resize(width, height)
@@ -887,6 +964,7 @@ mod tests {
     use wlshare_rfb::msg::{ClientMsg, Screen};
 
     use super::*;
+    use crate::framebuffer::Region;
 
     /// What the session wrote, read back with the server's own parser rather
     /// than by comparing bytes to bytes.
@@ -910,6 +988,9 @@ mod tests {
         Live {
             shared: Arc::new(Shared::default()),
             zrle: ZrleDecoder::default(),
+            encoding: Encoding::Zrle,
+            vp9: None,
+            scratch: Vec::new(),
             format: Framebuffer::FORMAT,
             surface: Surface { width: 800, height: 600, scale: 2.0 },
             asked_scale: None,
@@ -1086,9 +1167,81 @@ mod tests {
 
     #[test]
     fn sound_is_listed_only_when_the_window_asked_for_it() {
-        assert!(!encodings(false).contains(&ENCODING_AUDIO));
-        assert_eq!(encodings(true).last(), Some(&ENCODING_AUDIO));
-        assert_eq!(&encodings(true)[..ENCODINGS.len()], ENCODINGS);
+        assert!(!encodings(Encoding::Zrle, false).contains(&ENCODING_AUDIO));
+        assert_eq!(encodings(Encoding::Zrle, true).last(), Some(&ENCODING_AUDIO));
+        assert_eq!(&encodings(Encoding::Zrle, true)[2..2 + ENCODINGS.len()], ENCODINGS);
+    }
+
+    /// VP9 goes alone when chosen, with no pixel encoding behind it to fall
+    /// back to — and not at all when not.
+    #[test]
+    fn vp9_is_listed_alone_when_the_window_chose_it() {
+        let vp9 = encodings(Encoding::Vp9, true);
+        assert_eq!(vp9[0], ENCODING_VP9);
+        assert_eq!(&vp9[1..=ENCODINGS.len()], ENCODINGS);
+        assert!(!vp9.contains(&ENCODING_ZRLE) && !vp9.contains(&ENCODING_RAW));
+        let zrle = encodings(Encoding::Zrle, true);
+        assert_eq!(&zrle[..2], [ENCODING_ZRLE, ENCODING_RAW]);
+        assert!(!zrle.contains(&ENCODING_VP9));
+    }
+
+    /// A server without VP9 answers a list that names only it with Raw or
+    /// ZRLE, and that ends the session rather than being shown.
+    #[test]
+    fn pixels_other_than_vp9_end_a_vp9_session() {
+        let mut live = live();
+        live.encoding = Encoding::Vp9;
+        live.shared.framebuffer.lock().unwrap().resize(4, 2).unwrap();
+        live.shared.framebuffer.lock().unwrap().take_damage();
+        let raw = client::Rect { x: 0, y: 0, width: 4, height: 2, body: RectBody::Raw(vec![0x7F; 4 * 2 * 4]) };
+        let error = live.apply(raw.clone()).err().expect("Raw in a VP9 session");
+        assert!(error.to_string().contains("choose ZRLE"), "{error}");
+        assert!(live.apply(client::Rect { body: RectBody::Zrle(vec![0; 8]), ..raw.clone() }).is_err());
+        assert_eq!(live.shared.framebuffer.lock().unwrap().take_damage(), None, "nothing was drawn");
+
+        live.encoding = Encoding::Zrle;
+        assert!(live.apply(raw).is_ok(), "the same Raw rectangle is fine where it was listed");
+    }
+
+    /// A VP9 stream as the daemon sends it, frame by frame, lands in the
+    /// framebuffer and is said to have arrived.
+    #[tokio::test]
+    async fn vp9_frames_are_decoded_into_the_framebuffer() {
+        use wlshare_rfb::vp9::{QUALITY_MAX, Vp9Encoder};
+
+        let mut live = live();
+        live.encoding = Encoding::Vp9;
+        live.shared.framebuffer.lock().unwrap().resize(64, 32).unwrap();
+        live.shared.framebuffer.lock().unwrap().take_damage();
+        let mut writer = writer();
+        let mut encoder = Vp9Encoder::new(64, 32, QUALITY_MAX).unwrap();
+        for colour in [[200u8, 40, 10, 0], [10, 220, 60, 0]] {
+            let mut wire = wlshare_rfb::msg::update_header(1).to_vec();
+            wire.extend_from_slice(&wlshare_rfb::msg::rect_header(0, 0, 64, 32, ENCODING_VP9));
+            encoder.encode_rect(&colour.repeat(64 * 32), 64 * 4, false, &mut wire).unwrap();
+            let (message, used) = client::parse(&wire).unwrap().unwrap();
+            assert_eq!(used, wire.len());
+            live.handle(message, &mut writer).await.unwrap();
+
+            let fb = live.shared.framebuffer.lock().unwrap();
+            for pixel in fb.pixels().as_chunks::<4>().0 {
+                assert!(pixel[..3].iter().zip(&colour).all(|(a, b)| a.abs_diff(*b) <= 4), "{pixel:?} for {colour:?}");
+            }
+        }
+        assert_eq!(live.shared.framebuffer.lock().unwrap().take_damage(), Some(Region { x: 0, y: 0, width: 64, height: 32 }));
+        assert_eq!(live.shared.status.lock().unwrap().frames, 2);
+        assert_eq!(sent(&mut writer), vec![], "a frame is not answered");
+    }
+
+    #[test]
+    fn a_vp9_rectangle_nobody_asked_for_or_not_the_whole_desktop_ends_the_session() {
+        let mut live = live();
+        live.shared.framebuffer.lock().unwrap().resize(64, 32).unwrap();
+        let rect = |x, width| client::Rect { x, y: 0, width, height: 32, body: RectBody::Vp9(vec![0; 8]) };
+        assert!(live.apply(rect(0, 64)).is_err(), "ZRLE was asked for");
+        live.encoding = Encoding::Vp9;
+        assert!(live.apply(rect(8, 56)).is_err(), "a VP9 frame is the whole framebuffer");
+        assert!(live.apply(rect(0, 64)).is_err(), "and one that is not a frame is an error, not a panic");
     }
 
     /// The announcement is answered with the format and an enable, once; the
