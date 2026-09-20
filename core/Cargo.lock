@@ -672,8 +672,8 @@ dependencies = [
 
 [[package]]
 name = "wlshare-client"
-version = "0.0.34"
-source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.34#a4af0c1b34db009fe47173cbac1515a80626ca0f"
+version = "0.0.36"
+source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.36#adc0740c93ec2256be3c27902aaa5ecda586c617"
 dependencies = [
  "anyhow",
  "log",
@@ -690,8 +690,8 @@ dependencies = [
 
 [[package]]
 name = "wlshare-rfb"
-version = "0.0.34"
-source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.34#a4af0c1b34db009fe47173cbac1515a80626ca0f"
+version = "0.0.36"
+source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.36#adc0740c93ec2256be3c27902aaa5ecda586c617"
 dependencies = [
  "aes",
  "eax",
