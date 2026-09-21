@@ -5,39 +5,52 @@ using WlshareViewer.Interop;
 namespace WlshareViewer;
 
 /// <summary>
-/// The form, the desktop behind it, and the session between them. Everything
-/// that is about the desktop on the screen is in <see cref="DesktopView"/>;
-/// everything about the wire is in the Rust core.
+/// One connection, in a window of its own: the desktop on the screen, the
+/// session behind it, the Windows clipboard and the desktop's sound.
+///
+/// A window is a session and a session is a window — several stand side by
+/// side, each with its own socket, its own decoders and its own sound, and
+/// none of them knows about the others. What is shared between them is the
+/// list of saved desktops and the form over it, which is
+/// <see cref="ConnectWindow"/>'s. Everything that is about the desktop on the
+/// screen is in <see cref="DesktopView"/>; everything about the wire is in the
+/// Rust core.
 /// </summary>
-internal sealed partial class MainWindow : Window
+internal sealed partial class SessionWindow : Window
 {
+    /// <summary>The form, please: <b>New connection</b>, which leaves this
+    /// desktop where it is, and <b>Disconnect</b>, which closes it after.</summary>
+    public event Action? FormWanted;
+    /// <summary>The connection ended by itself — refused, or dropped — with the
+    /// reason. The window is still there when this is called; closing it is the
+    /// app's, which has somewhere to put the reason first.</summary>
+    public event Action<SessionWindow, string>? Dropped;
+
+    /// <summary>Where this one went, for its title and for saying which desktop
+    /// a reason belongs to.</summary>
+    public Destination Destination { get; }
+
     private Client? _client;
     private DesktopView? _desktop;
     private ClipboardSync? _clipboard;
     private AudioOutput? _audio;
-    /// <summary>The destination of the session in the window, for its
-    /// title.</summary>
-    private Destination? _last;
 
-    public MainWindow(Destination? fromArguments)
+    /// <summary>How far each window is offset from the one before it, so that
+    /// two desktops opened at once do not land exactly on top of each
+    /// other.</summary>
+    private const int CascadeStep = 32;
+    private const int CascadeWrap = 8;
+
+    public SessionWindow(Destination destination, int cascade)
     {
+        Destination = destination;
         InitializeComponent();
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "wlshare.ico"));
-        Place();
+        Place(cascade);
 
-        Form.Chosen += Open;
         // Ends the session and joins its thread while there is still a window
         // for its callbacks to have reached.
         Closed += (_, _) => EndSession();
-        // Not while the form holds something to correct: it stays up with the
-        // reason on it.
-        AppWindow.Closing += (_, e) =>
-        {
-            if (Form.Visibility == Visibility.Visible && !Form.Save())
-            {
-                e.Cancel = true;
-            }
-        };
         // The moments the window becomes the one in use, which is when the
         // Windows clipboard is offered to the desktop — and when a desktop
         // clipboard that could not be written, the Windows one being held by
@@ -53,52 +66,6 @@ internal sealed partial class MainWindow : Window
             }
         };
 
-        // A launch from a shell says where to go; a launch from the Start menu
-        // asks.
-        if (fromArguments is not null)
-        {
-            // The password saved for the same place and user, if any. One that
-            // will not open is not tried as none: the form says why, and is
-            // where it is typed. The form gets the destination without it, so a
-            // retry does not show it.
-            var profile = Form.Profiles.Matching(fromArguments);
-            Form.Load(fromArguments, profile?.Id);
-            Destination attempt;
-            try
-            {
-                attempt = fromArguments with { Password = profile?.Password() ?? "" };
-            }
-            catch (SafeStorageException e)
-            {
-                Ask(e.Message);
-                return;
-            }
-            Open(attempt);
-        }
-        else
-        {
-            Ask(null);
-        }
-    }
-
-    /// <summary>Three quarters of the screen the window opens on, in the
-    /// middle of it: a desktop is asked to be the window's size, so a small
-    /// window is a small desktop.</summary>
-    private void Place()
-    {
-        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        var width = area.Width * 3 / 4;
-        var height = area.Height * 3 / 4;
-        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height));
-    }
-
-    // ── A session ───────────────────────────────────────────────────────────
-
-    private void Open(Destination destination)
-    {
-        EndSession();
-        _last = destination;
-
         var desktop = new DesktopView();
         _desktop = desktop;
         DesktopHost.Child = desktop;
@@ -106,8 +73,6 @@ internal sealed partial class MainWindow : Window
         Title = $"{destination.Label} — wlshare";
         Banner.Text = $"Connecting to {destination.Label}…";
         Banner.Visibility = Visibility.Visible;
-        Form.Visibility = Visibility.Collapsed;
-        Session.Visibility = Visibility.Visible;
 
         // The first surface is the view's own size, so the desktop is asked to
         // match before the first frame rather than after it — which it cannot
@@ -130,7 +95,28 @@ internal sealed partial class MainWindow : Window
         };
     }
 
-    /// <summary>Put the session and its view away.</summary>
+    /// <summary>Three quarters of the screen the window opens on, in the middle
+    /// of it and a step down and right of the desktop opened before it: a
+    /// desktop is asked to be the window's size, so a small window is a small
+    /// desktop.</summary>
+    private void Place(int cascade)
+    {
+        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        var width = area.Width * 3 / 4;
+        var height = area.Height * 3 / 4;
+        var step = CascadeStep * (cascade % CascadeWrap);
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(
+            area.X + (area.Width - width) / 2 + step,
+            area.Y + (area.Height - height) / 2 + step,
+            width,
+            height));
+    }
+
+    // ── The session ─────────────────────────────────────────────────────────
+
+    /// <summary>Put the session and its view away. The window is left to the
+    /// caller; closing it comes back here, and everything below is safe
+    /// twice.</summary>
     private void EndSession()
     {
         _desktop?.Detach();
@@ -161,9 +147,9 @@ internal sealed partial class MainWindow : Window
                 break;
             case Client.State.Ready:
                 Banner.Visibility = Visibility.Collapsed;
-                var name = status.Name.Length == 0 ? _last?.Label : status.Name;
+                var name = status.Name.Length == 0 ? Destination.Label : status.Name;
                 // A VP9 session is VP9 or nothing: a server without it ends it.
-                var encoding = _last?.Encoding == PixelEncoding.Vp9 ? " · VP9" : "";
+                var encoding = Destination.Encoding == PixelEncoding.Vp9 ? " · VP9" : "";
                 SessionTitle.Text = $"{name} — {status.Width}×{status.Height} @ {Scale(status.Scale)}{encoding}";
                 Title = $"{name} — wlshare";
                 // Not before the server has said it has sound: a session
@@ -174,9 +160,8 @@ internal sealed partial class MainWindow : Window
                 }
                 break;
             case Client.State.Closed:
-                // Back to the form with the reason on it.
                 EndSession();
-                Ask(status.Error ?? "The connection closed.");
+                Dropped?.Invoke(this, status.Error ?? "The connection closed.");
                 return;
         }
         _clipboard?.Take();
@@ -186,17 +171,13 @@ internal sealed partial class MainWindow : Window
     private static string Scale(double scale) =>
         scale == Math.Round(scale) ? $"{scale:0}×" : $"{scale:0.00}×";
 
-    private void Ask(string? error)
-    {
-        Session.Visibility = Visibility.Collapsed;
-        Form.Visibility = Visibility.Visible;
-        Title = "wlshare";
-        Form.Show(error);
-    }
+    private void OnNewConnection(object sender, RoutedEventArgs e) => FormWanted?.Invoke();
 
+    /// <summary>The form, and this desktop away — in that order, so the app is
+    /// never for a moment down to no windows at all.</summary>
     private void OnDisconnect(object sender, RoutedEventArgs e)
     {
-        EndSession();
-        Ask(null);
+        FormWanted?.Invoke();
+        Close();
     }
 }
