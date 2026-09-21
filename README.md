@@ -66,10 +66,17 @@ that profile and connects; with nothing in the list yet it makes the first one
 of what you typed. **+** starts a new desktop and **−** deletes the selected
 one. A row is its name and where it goes — there is no picture of the desktop.
 
+Each desktop opens in a window of its own and stays there: connecting again
+adds a window rather than taking the place of the one that is up, so several
+desktops can be open at once, each with its own sound and its own clipboard.
+**New connection** in a desktop's toolbar brings the list back beside them.
+
 The password is saved only for a profile whose **Save the password** is ticked,
-and then sealed: see [Saved passwords](#saved-passwords). **Disconnect** ends
-the session, and a connection that is refused or drops brings the list back
-with the reason on it.
+and then sealed: see [Saved passwords](#saved-passwords). **Disconnect** closes
+that desktop and brings the list back, closing the last desktop's window closes
+the app when the list is put away — and leaves the list up when it is not — and
+a connection that is refused or drops brings the list back with the reason on
+it and which desktop it is about.
 
 An empty password asks for the `None` security type; anything else asks for
 RSA-AES, which is the only type this client authenticates with — and the one
@@ -125,8 +132,8 @@ has a tag is refused.
 
 - `core/` — the Rust crate: `wlshare-client`'s session with the Windows key and
   wheel tables and the C ABI in `src/ffi.rs` on top.
-- `src/WlshareViewer/` — the app: the form, the window, the Win2D view, the
-  input, and `Interop/Native.cs`, the ABI's other half.
+- `src/WlshareViewer/` — the app: the form, the session windows, the Win2D
+  view, the input, and `Interop/Native.cs`, the ABI's other half.
 - `installer/` — the WiX 5 MSI.
 - `scripts/package-windows.ps1` — the release build and the MSI; the release
   workflow runs nothing else.

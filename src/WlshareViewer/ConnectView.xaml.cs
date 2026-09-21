@@ -21,9 +21,13 @@ namespace WlshareViewer;
 /// saved when the selection moves, on <b>Connect</b>, and when the window
 /// closes.
 ///
+/// One form, as many desktops as have been opened from it: <b>Connect</b> puts
+/// it away and adds a window, never taking one away, and <b>New connection</b>
+/// in a desktop's toolbar brings it back beside whatever is open.
+///
 /// It is also where a session ends up — a refused or dropped connection brings
-/// this back with the reason on it and the form as it was, password included,
-/// so there is somewhere to correct and retry.
+/// this back with the reason on it, which desktop it is about, and the form as
+/// it was left, so there is somewhere to correct and retry.
 /// </summary>
 internal sealed partial class ConnectView : UserControl
 {

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="WlshareViewer.SessionWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="wlshare">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- The toolbar: what the desktop is, the way to another one, and the
+             way out. Everything below it is the desktop's. -->
+        <Grid Padding="12,4" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="SessionTitle" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <Button Grid.Column="1" Content="New connection" Click="OnNewConnection" />
+            <Button Grid.Column="2" Content="Disconnect" Click="OnDisconnect" />
+        </Grid>
+
+        <Border x:Name="DesktopHost" Grid.Row="1" Background="Black" />
+        <TextBlock x:Name="Banner" Grid.Row="1" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Grid>
+</Window>

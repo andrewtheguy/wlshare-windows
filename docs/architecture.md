@@ -1,7 +1,7 @@
 # How the client is put together
 
-A native Windows window onto a [wlshare](https://github.com/andrewtheguy/wlshare)
-desktop. Two halves, and the line between them is a C ABI:
+A native Windows client for [wlshare](https://github.com/andrewtheguy/wlshare)
+desktops, a window to each. Two halves, and the line between them is a C ABI:
 
 ```
   WinUI ──▶ DesktopView ──▶ Client.cs ──▶ Native.cs ═══ wlshare_client_core.dll
@@ -129,8 +129,30 @@ password saved in the first profile with the same host, port and user name, and
 a destination with none — or one that is refused — ends up at the form, which
 is the only place a password is ever typed.
 
-A session ends where it began. A refused connection, a dropped one and
-**Disconnect** all put the form back with the reason on it.
+## A desktop to a window
+
+A desktop opens in a window of its own and stays there: **Connect** adds a
+session beside whatever is already open, never in place of it, so several
+desktops stand side by side, each with its own socket, its own decoders and its
+own sound. `SessionWindow` is one of them — the window, the `Client` under it,
+the `DesktopView` in it, the clipboard and the sound — and `App` holds the list
+of them and the one `ConnectWindow` they are started from. Nothing is shared
+but the saved desktops: the Windows clipboard is offered to the one window that
+has just become the one in use.
+
+The form is put away when a session opens and comes back on **New connection**,
+which leaves the desktops where they are, and on **Disconnect**, which closes
+the one it is in afterwards. A refused connection and a dropped one put it back
+with the reason on it and which desktop it is about, and only then take that
+window away — in that order, because an app briefly down to no windows at all
+is an app that closes itself.
+
+Closing a desktop's window ends that session and joins its thread while the
+window is still there for the callbacks to have reached. Closing the last one
+with the form put away rather than asked for closes the form too, and with it
+the app; closing the form while a desktop is open only puts it away again,
+since it is the only form there is. Each window opens three quarters of its
+screen, a step down and right of the desktop opened before it.
 
 ## Threads
 
