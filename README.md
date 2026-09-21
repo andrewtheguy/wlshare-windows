@@ -74,8 +74,9 @@ desktops can be open at once, each with its own sound and its own clipboard.
 The password is saved only for a profile whose **Save the password** is ticked,
 and then sealed: see [Saved passwords](#saved-passwords). **Disconnect** closes
 that desktop and brings the list back, closing the last desktop's window closes
-the app, and a connection that is refused or drops brings the list back with
-the reason on it and which desktop it is about.
+the app when the list is put away — and leaves the list up when it is not — and
+a connection that is refused or drops brings the list back with the reason on
+it and which desktop it is about.
 
 An empty password asks for the `None` security type; anything else asks for
 RSA-AES, which is the only type this client authenticates with — and the one

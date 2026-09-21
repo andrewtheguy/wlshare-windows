@@ -96,20 +96,20 @@ internal sealed partial class SessionWindow : Window
     }
 
     /// <summary>Three quarters of the screen the window opens on, in the middle
-    /// of it and a step down and right of the desktop opened before it: a
-    /// desktop is asked to be the window's size, so a small window is a small
-    /// desktop.</summary>
+    /// of it and a step down and right of the desktop opened before it, as far
+    /// as the screen allows: a desktop is asked to be the window's size, so a
+    /// small window is a small desktop.</summary>
     private void Place(int cascade)
     {
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
         var width = area.Width * 3 / 4;
         var height = area.Height * 3 / 4;
         var step = CascadeStep * (cascade % CascadeWrap);
-        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(
-            area.X + (area.Width - width) / 2 + step,
-            area.Y + (area.Height - height) / 2 + step,
-            width,
-            height));
+        // A quarter of a narrow screen is fewer than a whole cascade of steps,
+        // so the last of them would otherwise be off the edge of it.
+        var x = Math.Clamp(area.X + (area.Width - width) / 2 + step, area.X, area.X + area.Width - width);
+        var y = Math.Clamp(area.Y + (area.Height - height) / 2 + step, area.Y, area.Y + area.Height - height);
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, width, height));
     }
 
     // ── The session ─────────────────────────────────────────────────────────
