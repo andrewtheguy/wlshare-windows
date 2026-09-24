@@ -11,16 +11,20 @@ namespace WlshareViewer;
 /// A window is a session and a session is a window — several stand side by
 /// side, each with its own socket, its own decoders and its own sound, and
 /// none of them knows about the others. What is shared between them is the
-/// list of saved desktops and the form over it, which is
-/// <see cref="ConnectWindow"/>'s. Everything that is about the desktop on the
+/// library they were opened from, <see cref="ConnectWindow"/>, which stays
+/// behind them. Everything that is about the desktop on the
 /// screen is in <see cref="DesktopView"/>; everything about the wire is in the
 /// Rust core.
 /// </summary>
 internal sealed partial class SessionWindow : Window
 {
-    /// <summary>The form, please: <b>New connection</b>, which leaves this
-    /// desktop where it is, and <b>Disconnect</b>, which closes it after.</summary>
-    public event Action? FormWanted;
+    /// <summary>The library forward, please: <b>Library</b>, which leaves this
+    /// desktop where it is.</summary>
+    public event Action? LibraryWanted;
+    /// <summary><b>Disconnect</b>: this desktop closed, please. The app does
+    /// it, with the library up first when this is the last one, so the app is
+    /// never for a moment down to no windows at all.</summary>
+    public event Action<SessionWindow>? Leaving;
     /// <summary>The connection ended by itself — refused, or dropped — with the
     /// reason. The window is still there when this is called; closing it is the
     /// app's, which has somewhere to put the reason first.</summary>
@@ -171,13 +175,7 @@ internal sealed partial class SessionWindow : Window
     private static string Scale(double scale) =>
         scale == Math.Round(scale) ? $"{scale:0}×" : $"{scale:0.00}×";
 
-    private void OnNewConnection(object sender, RoutedEventArgs e) => FormWanted?.Invoke();
+    private void OnLibrary(object sender, RoutedEventArgs e) => LibraryWanted?.Invoke();
 
-    /// <summary>The form, and this desktop away — in that order, so the app is
-    /// never for a moment down to no windows at all.</summary>
-    private void OnDisconnect(object sender, RoutedEventArgs e)
-    {
-        FormWanted?.Invoke();
-        Close();
-    }
+    private void OnDisconnect(object sender, RoutedEventArgs e) => Leaving?.Invoke(this);
 }

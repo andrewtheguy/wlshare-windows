@@ -35,22 +35,31 @@
                 </StackPanel>
             </Grid>
 
+            <!-- Every field says when it changes, so Save is offered exactly
+                 while the form differs from what is saved. -->
             <StackPanel x:Name="FormPanel" Grid.Column="1" Spacing="12" SizeChanged="OnFormSized">
                 <TextBlock Text="Connect to a wlshare desktop" Style="{StaticResource SubtitleTextBlockStyle}" />
-                <TextBox x:Name="NameBox" Header="Name" PlaceholderText="the host, if none" />
-                <TextBox x:Name="HostBox" Header="Host" PlaceholderText="hostname or address" />
-                <TextBox x:Name="PortBox" Header="Port" PlaceholderText="5900" InputScope="Number" />
-                <TextBox x:Name="UsernameBox" Header="User name" PlaceholderText="optional" />
-                <PasswordBox x:Name="PasswordBox" Header="Password" PlaceholderText="none" />
+                <TextBox x:Name="NameBox" Header="Name" PlaceholderText="the host, if none" TextChanged="OnTextEdited" />
+                <TextBox x:Name="HostBox" Header="Host" PlaceholderText="hostname or address" TextChanged="OnTextEdited" />
+                <TextBox x:Name="PortBox" Header="Port" PlaceholderText="5900" InputScope="Number" TextChanged="OnTextEdited" />
+                <TextBox x:Name="UsernameBox" Header="User name" PlaceholderText="optional" TextChanged="OnTextEdited" />
+                <PasswordBox x:Name="PasswordBox" Header="Password" PlaceholderText="none" PasswordChanged="OnPasswordEdited" />
                 <!-- VP9 first, because it is the default; the order is PixelEncoding's. -->
-                <ComboBox x:Name="EncodingBox" Header="Encoding" HorizontalAlignment="Stretch">
+                <ComboBox x:Name="EncodingBox" Header="Encoding" HorizontalAlignment="Stretch" SelectionChanged="OnEncodingEdited">
                     <ComboBoxItem Content="VP9 4:4:4" />
                     <ComboBoxItem Content="ZRLE (exact, larger)" />
                 </ComboBox>
-                <CheckBox x:Name="SavesPasswordBox" Content="Save the password" />
-                <CheckBox x:Name="AudioBox" Content="Play the desktop's sound" />
+                <CheckBox x:Name="SavesPasswordBox" Content="Save the password" Checked="OnChecked" Unchecked="OnChecked" />
+                <CheckBox x:Name="AudioBox" Content="Play the desktop's sound" Checked="OnChecked" Unchecked="OnChecked" />
                 <InfoBar x:Name="Message" Severity="Error" IsClosable="False" IsOpen="False" />
-                <Button Content="Connect" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="OnConnect" />
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="SaveButton" Content="Save" HorizontalAlignment="Stretch" Click="OnSave" />
+                    <Button Grid.Column="1" Content="Connect" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="OnConnect" />
+                </Grid>
             </StackPanel>
         </Grid>
     </ScrollViewer>

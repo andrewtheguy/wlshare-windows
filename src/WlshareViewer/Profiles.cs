@@ -80,9 +80,20 @@ internal sealed record Profile
     };
 }
 
+/// <summary>Where a window was last left, in the screen's own pixels: what the
+/// library opens at the next time.</summary>
+internal sealed record Placement
+{
+    public int X { get; init; }
+    public int Y { get; init; }
+    public int Width { get; init; }
+    public int Height { get; init; }
+}
+
 /// <summary>
-/// The saved profiles, in the order they were made, and which one the form was
-/// last showing, in %LOCALAPPDATA%\wlshare\profiles.json.
+/// The saved profiles, in the order they were made, which one the form was
+/// last showing and where the library window was left, in
+/// %LOCALAPPDATA%\wlshare\profiles.json.
 ///
 /// A file is all right here: the only secret in a profile is sealed, and the
 /// key that opens it is in Credential Manager.
@@ -100,6 +111,7 @@ internal sealed class ProfileStore
 
     private List<Profile> _profiles;
     private Guid? _selected;
+    private Placement? _library;
 
     public ProfileStore()
     {
@@ -108,6 +120,7 @@ internal sealed class ProfileStore
             var saved = Shared.Locked(Read);
             _profiles = saved.Profiles;
             _selected = saved.Selected;
+            _library = saved.Library;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -137,6 +150,29 @@ internal sealed class ProfileStore
             try
             {
                 Shared.Locked(() => Write(Read() with { Selected = value }));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    /// <summary>Where the library window was when it was last put away or
+    /// closed; null until it has been. Not keeping it is not a reason to stop
+    /// anything either.</summary>
+    public Placement? Library
+    {
+        get => _library;
+        set
+        {
+            if (_library == value)
+            {
+                return;
+            }
+            _library = value;
+            try
+            {
+                Shared.Locked(() => Write(Read() with { Library = value }));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -250,6 +286,7 @@ internal sealed record ProfileFile
 {
     public List<Profile> Profiles { get; init; } = [];
     public Guid? Selected { get; init; }
+    public Placement? Library { get; init; }
 }
 
 [JsonSourceGenerationOptions(WriteIndented = true)]

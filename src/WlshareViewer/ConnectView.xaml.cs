@@ -14,16 +14,19 @@ namespace WlshareViewer;
 /// encoding and whether to play the desktop's sound — for someone who opened
 /// the app from the Start menu and has no command line to put them on.
 ///
-/// Every connection made here is to a profile. <b>Connect</b> saves the form
-/// into the selected one first, and with nothing selected makes a new one of
-/// it, so a desktop connected to once is in the list from then on; <b>+</b>
-/// starts an empty one and <b>−</b> deletes one. What is typed into the form is
-/// saved when the selection moves, on <b>Connect</b>, and when the window
-/// closes.
+/// Every connection made here is to a profile. Nothing is saved by itself:
+/// <b>Save</b> writes the form into the selected profile, or makes a new one of
+/// it when none is selected, and <b>Connect</b> does the same and then
+/// connects, so a desktop connected to once is in the list from then on.
+/// <b>+</b> clears the form for a new desktop, which is in the list only once
+/// it is saved, and <b>−</b> deletes one. Moving the selection, closing the
+/// window and closing the app with something unsaved in the form ask whether
+/// to keep it, as a document would.
 ///
-/// One form, as many desktops as have been opened from it: <b>Connect</b> puts
-/// it away and adds a window, never taking one away, and <b>New connection</b>
-/// in a desktop's toolbar brings it back beside whatever is open.
+/// One library, as many desktops as have been opened from it: <b>Connect</b>
+/// adds a window and leaves this one where it is, never taking one away, and
+/// <b>Library</b> in a desktop's toolbar brings it forward from behind
+/// whatever is open.
 ///
 /// It is also where a session ends up — a refused or dropped connection brings
 /// this back with the reason on it, which desktop it is about, and the form as
@@ -38,12 +41,21 @@ internal sealed partial class ConnectView : UserControl
 
     public ProfileStore Profiles { get; } = new();
 
+    /// <summary>Whether the window has been on the screen. A form nobody has
+    /// seen holds nothing anybody typed: a command-line launch fills it in
+    /// case the connection is refused, and closing the app must not ask to
+    /// save that.</summary>
+    public bool Presented { get; private set; }
+
     /// <summary>The profile the form is showing; null for a desktop not saved
     /// yet.</summary>
     private Guid? _current;
     /// <summary>Set while the list is changed from here, so its selection
     /// moving is not taken for a click.</summary>
     private bool _moving;
+    /// <summary>Set while a dialog is up: a second one over the same content
+    /// is an error, not a queue.</summary>
+    private bool _asking;
 
     public ConnectView()
     {
@@ -64,7 +76,6 @@ internal sealed partial class ConnectView : UserControl
     /// with the command line's sound and encoding, not the profile's.</summary>
     public void Load(Destination destination, Guid? profile)
     {
-        Commit();
         Select(profile);
         var tried = (profile is { } id ? Profiles.Find(id) : null) ?? Profile.From(destination);
         Fill(tried with { Audio = destination.Audio, Encoding = destination.Encoding });
@@ -75,6 +86,7 @@ internal sealed partial class ConnectView : UserControl
     /// password, or nothing at all.</summary>
     public void Show(string? error)
     {
+        Presented = true;
         Say(error);
         var saved = _current is { } id && Profiles.Find(id)?.SealedPassword is not null;
         Control first = HostBox.Text.Trim().Length == 0 ? HostBox
@@ -82,18 +94,80 @@ internal sealed partial class ConnectView : UserControl
         first.Focus(FocusState.Programmatic);
     }
 
-    /// <summary>Keep what is typed into the form, for a window about to close.
-    /// False only when there is something to correct — a port that is not one —
-    /// with the reason on the form; a list or password that will not save is
-    /// no reason to keep the window, since closing again would fail the same
-    /// way.</summary>
-    public bool Save()
+    /// <summary>Whether the form differs from what is saved: the selected
+    /// profile, or nothing for a desktop not saved yet. A typed password
+    /// counts only when it would be kept.</summary>
+    public bool HasEdits
     {
-        Commit();
-        return TryPort(out _);
+        get
+        {
+            var stored = Stored() ?? new Profile();
+            if (Draft(stored) is not { } draft)
+            {
+                return true;
+            }
+            return draft != stored || (draft.SavesPassword && PasswordBox.Password.Length > 0);
+        }
+    }
+
+    /// <summary>Ask what to do with unsaved edits, when there are any: true
+    /// once the form holds nothing that is not saved or let go of, false to
+    /// stay put — which is also the answer while another dialog is up. Letting
+    /// go puts the form back as it is saved, so what was typed does not come
+    /// back with the window.</summary>
+    public async Task<bool> SettleAsync()
+    {
+        if (!HasEdits)
+        {
+            return true;
+        }
+        var stored = Stored();
+        var ask = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = stored is null ? "Save this desktop?" : $"Save the changes to “{stored.Title}”?",
+            Content = "What is typed into the form is lost otherwise.",
+            PrimaryButtonText = "Save",
+            SecondaryButtonText = "Don't Save",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        switch (await AskAsync(ask))
+        {
+            case ContentDialogResult.Primary:
+                return Commit();
+            case ContentDialogResult.Secondary:
+                Fill(stored ?? new Profile());
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>One dialog at a time over this content; a second asked for
+    /// while one is up is answered as dismissed.</summary>
+    private async Task<ContentDialogResult> AskAsync(ContentDialog dialog)
+    {
+        if (_asking)
+        {
+            return ContentDialogResult.None;
+        }
+        _asking = true;
+        try
+        {
+            return await dialog.ShowAsync();
+        }
+        finally
+        {
+            _asking = false;
+        }
     }
 
     // ── The form ────────────────────────────────────────────────────────────
+
+    /// <summary>The profile the form is showing, as it is saved; null for a
+    /// desktop not saved yet.</summary>
+    private Profile? Stored() => _current is { } id ? Profiles.Find(id) : null;
 
     /// <summary>Show <paramref name="profile"/> in the form. The password field
     /// starts empty whatever is saved: a saved password is opened when it is
@@ -111,7 +185,23 @@ internal sealed partial class ConnectView : UserControl
         EncodingBox.SelectedIndex = (int)profile.Encoding;
         Say(null);
         RemoveButton.IsEnabled = _current is not null;
+        Edited();
     }
+
+    /// <summary>Something in the form changed: <b>Save</b> is offered while it
+    /// differs from what is saved.</summary>
+    private void Edited()
+    {
+        SaveButton.IsEnabled = HasEdits;
+    }
+
+    private void OnTextEdited(object sender, TextChangedEventArgs e) => Edited();
+
+    private void OnPasswordEdited(object sender, RoutedEventArgs e) => Edited();
+
+    private void OnEncodingEdited(object sender, SelectionChangedEventArgs e) => Edited();
+
+    private void OnChecked(object sender, RoutedEventArgs e) => Edited();
 
     /// <summary>The port box's port: 5900 when it is empty, false when it
     /// holds something that is not a port.</summary>
@@ -123,31 +213,17 @@ internal sealed partial class ConnectView : UserControl
             || (ushort.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out port) && port != 0);
     }
 
-    /// <summary>Write the form into the profile it is showing — or, with
-    /// <paramref name="creating"/>, into a new one when it is showing none.
-    /// False, with the reason on the form, when the port is not a port, the
-    /// password would not seal or the list would not save.</summary>
-    private bool Commit(bool creating = false)
+    /// <summary>The form as a profile over <paramref name="stored"/> — its id,
+    /// and its sealed password while the checkbox says to keep one — or null
+    /// when the port is not a port. What is typed into the password field is
+    /// not sealed here.</summary>
+    private Profile? Draft(Profile stored)
     {
         if (!TryPort(out var port))
         {
-            Fail("A port is a number from 1 to 65535.", PortBox);
-            return false;
+            return null;
         }
-        Profile profile;
-        if (_current is { } id && Profiles.Find(id) is { } saved)
-        {
-            profile = saved;
-        }
-        else if (creating)
-        {
-            profile = new Profile();
-        }
-        else
-        {
-            return true;
-        }
-        profile = profile with
+        var profile = stored with
         {
             Name = NameBox.Text.Trim(),
             Host = HostBox.Text.Trim(),
@@ -157,11 +233,27 @@ internal sealed partial class ConnectView : UserControl
             Encoding = EncodingBox.SelectedIndex == (int)PixelEncoding.Zrle ? PixelEncoding.Zrle : PixelEncoding.Vp9,
             SavesPassword = SavesPasswordBox.IsChecked == true,
         };
-        if (!profile.SavesPassword)
+        return profile.SavesPassword ? profile : profile with { SealedPassword = null };
+    }
+
+    /// <summary>Write the form into the profile it is showing, or into a new
+    /// one when it is showing none. False, with the reason on the form, when
+    /// there is no host, the port is not a port, the password would not seal
+    /// or the list would not save.</summary>
+    private bool Commit()
+    {
+        if (HostBox.Text.Trim().Length == 0)
         {
-            profile = profile with { SealedPassword = null };
+            Fail("A host is needed.", HostBox);
+            return false;
         }
-        else if (PasswordBox.Password.Length > 0)
+        if (Draft(Stored() ?? new Profile()) is not { } profile)
+        {
+            Fail("A port is a number from 1 to 65535.", PortBox);
+            return false;
+        }
+        var typed = profile.SavesPassword && PasswordBox.Password.Length > 0;
+        if (typed)
         {
             try
             {
@@ -182,6 +274,11 @@ internal sealed partial class ConnectView : UserControl
             Fail($"The desktops could not be saved: {e.Message}", NameBox);
             return false;
         }
+        if (typed)
+        {
+            // Saved now, and shown as saved rather than left typed.
+            PasswordBox.Password = "";
+        }
         if (_current is null)
         {
             _current = profile.Id;
@@ -190,28 +287,30 @@ internal sealed partial class ConnectView : UserControl
         Sync();
         PasswordBox.PlaceholderText = profile.SealedPassword is null ? "none" : "saved";
         RemoveButton.IsEnabled = true;
+        Say(null);
+        Edited();
         return true;
     }
+
+    /// <summary><b>Save</b>: the form into its profile, and nothing else.</summary>
+    private void OnSave(object sender, RoutedEventArgs e) => Commit();
 
     private void OnConnect(object sender, RoutedEventArgs e) => Connect();
 
     private void Connect()
     {
-        if (HostBox.Text.Trim().Length == 0)
-        {
-            Fail("Say which host to connect to.", HostBox);
-            return;
-        }
-        // Taken before the commit, which drops it when the checkbox is off.
-        var saved = _current is { } before ? Profiles.Find(before)?.SealedPassword : null;
-        if (!Commit(creating: true) || _current is not { } id || Profiles.Find(id) is not { } profile)
+        // Both taken before the commit, which drops the saved one when the
+        // checkbox is off and clears the field once the typed one is sealed.
+        var saved = Stored()?.SealedPassword;
+        var typed = PasswordBox.Password;
+        if (!Commit() || _current is not { } id || Profiles.Find(id) is not { } profile)
         {
             return;
         }
         // What is typed wins; with nothing typed, what is saved. A password
         // saved and no longer wanted is still the one to connect with this
         // once, as it was when the checkbox was unticked.
-        var password = PasswordBox.Password;
+        var password = typed;
         if (password.Length == 0 && saved is not null)
         {
             try
@@ -224,7 +323,6 @@ internal sealed partial class ConnectView : UserControl
                 return;
             }
         }
-        Say(null);
         Chosen?.Invoke(profile.ToDestination(password));
     }
 
@@ -259,25 +357,17 @@ internal sealed partial class ConnectView : UserControl
         ListPanel.Height = e.NewSize.Height;
     }
 
-    private void OnAdd(object sender, RoutedEventArgs e)
+    /// <summary>Clear the form for a desktop not saved yet. It joins the list
+    /// on <b>Save</b> or <b>Connect</b>, not before; something unsaved already
+    /// in the form is asked about first.</summary>
+    private async void OnAdd(object sender, RoutedEventArgs e)
     {
-        // A desktop typed in but not saved yet is kept, not dropped.
-        if (!Commit(creating: HostBox.Text.Trim().Length > 0))
+        if (!await SettleAsync())
         {
             return;
         }
-        var profile = new Profile();
-        try
-        {
-            Profiles.Put(profile);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-        {
-            Fail($"The desktops could not be saved: {error.Message}", NameBox);
-            return;
-        }
-        Refill();
-        Select(profile.Id);
+        Select(null);
+        Fill(new Profile());
         HostBox.Focus(FocusState.Programmatic);
     }
 
@@ -298,7 +388,7 @@ internal sealed partial class ConnectView : UserControl
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
         };
-        if (await ask.ShowAsync() != ContentDialogResult.Primary || _current != id)
+        if (await AskAsync(ask) != ContentDialogResult.Primary || _current != id)
         {
             return;
         }
@@ -350,22 +440,26 @@ internal sealed partial class ConnectView : UserControl
         Fill((id is { } found ? Profiles.Find(found) : null) ?? new Profile());
     }
 
-    /// <summary>Moving off a profile saves what was typed into it, and a port
-    /// that is not one puts the selection back until it is put right.</summary>
-    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    /// <summary>Moving off a profile with something unsaved typed into it asks
+    /// first, and staying is staying: the selection does not move.</summary>
+    private async void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_moving)
         {
             return;
         }
-        // Taken before the commit, which may make the list again.
         var target = (List.SelectedItem as ListViewItem)?.Tag as Guid?;
-        if (!Commit())
+        if (HasEdits)
         {
+            // Back on what the form shows until the answer is in: a save that
+            // fails, or a Cancel, leaves the selection where it was.
             _moving = true;
             List.SelectedIndex = _current is { } id ? Profiles.IndexOf(id) : -1;
             _moving = false;
-            return;
+            if (!await SettleAsync())
+            {
+                return;
+            }
         }
         Select(target);
     }

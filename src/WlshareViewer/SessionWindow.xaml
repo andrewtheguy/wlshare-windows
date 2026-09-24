@@ -11,8 +11,8 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- The toolbar: what the desktop is, the way to another one, and the
-             way out. Everything below it is the desktop's. -->
+        <!-- The toolbar: what the desktop is, the way to the library behind
+             it, and the way out. Everything below it is the desktop's. -->
         <Grid Padding="12,4" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
@@ -20,7 +20,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="SessionTitle" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <Button Grid.Column="1" Content="New connection" Click="OnNewConnection" />
+            <Button Grid.Column="1" Content="Library" Click="OnLibrary" />
             <Button Grid.Column="2" Content="Disconnect" Click="OnDisconnect" />
         </Grid>
 

@@ -59,30 +59,36 @@ pwsh scripts/package-windows.ps1   # dist\package\WlshareViewer-windows-x64.msi
 
 ## Connecting
 
-The app opens on the saved desktops as a list, and beside it a form for the one
-selected: a name, the host, the port, the user name, the password, the encoding
-and the sound. **Connect** (or a double-click on the row) saves the form into
-that profile and connects; with nothing in the list yet it makes the first one
-of what you typed. **+** starts a new desktop and **−** deletes the selected
-one. A row is its name and where it goes — there is no picture of the desktop.
+The app opens on the **Library**: the saved desktops as a list, and beside it a
+form for the one selected — a name, the host, the port, the user name, the
+password, the encoding and the sound. Nothing is saved until you say so:
+**Save** writes the form into that profile, and **Connect** (or a double-click
+on the row) does the same and connects; with nothing selected either makes a
+new profile of what you typed. **+** clears the form for a new desktop, which
+joins the list once it is saved or connected, and **−** deletes the selected
+one. Moving to another row, closing the window or closing the app with
+something unsaved asks whether to keep it. A row is its name and where it goes
+— there is no picture of the desktop.
 
-Each desktop opens in a window of its own and stays there: connecting again
-adds a window rather than taking the place of the one that is up, so several
-desktops can be open at once, each with its own sound and its own clipboard.
-**New connection** in a desktop's toolbar brings the list back beside them.
+Each desktop opens in a window of its own, in front of the library, which stays
+where it is: connecting adds a window rather than taking the place of anything
+that is up, so several desktops can be open at once, each with its own sound
+and its own clipboard. There is one library window; **Library** in a desktop's
+toolbar brings it forward from behind the desktops, and closing it while a
+desktop is open only puts it away. The library opens where it was last left.
 
 The password is saved only for a profile whose **Save the password** is ticked,
 and then sealed: see [Saved passwords](#saved-passwords). **Disconnect** closes
-that desktop and brings the list back, closing the last desktop's window closes
-the app when the list is put away — and leaves the list up when it is not — and
-a connection that is refused or drops brings the list back with the reason on
-it and which desktop it is about.
+that desktop, with the library brought forward first when it was the last one;
+closing the last window — the library, or a desktop with the library put away —
+closes the app; and a connection that is refused or drops brings the library
+forward with the reason on it and which desktop it is about.
 
 An empty password asks for the `None` security type; anything else asks for
 RSA-AES, which is the only type this client authenticates with — and the one
 that encrypts the session.
 
-A destination on the command line skips the form:
+A destination on the command line skips the library:
 
 ```powershell
 WlshareViewer.exe --server 192.168.1.10:5900 --username me --audio --encoding zrle
@@ -132,7 +138,7 @@ has a tag is refused.
 
 - `core/` — the Rust crate: `wlshare-client`'s session with the Windows key and
   wheel tables and the C ABI in `src/ffi.rs` on top.
-- `src/WlshareViewer/` — the app: the form, the session windows, the Win2D
+- `src/WlshareViewer/` — the app: the library, the session windows, the Win2D
   view, the input, and `Interop/Native.cs`, the ABI's other half.
 - `installer/` — the WiX 5 MSI.
 - `scripts/package-windows.ps1` — the release build and the MSI; the release
