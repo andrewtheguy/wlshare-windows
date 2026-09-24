@@ -16,14 +16,13 @@
              slides up out of the window after a moment and comes back when
              the pointer touches the top edge, and it can be dragged along
              the edge by its handle. Dark whatever the theme, being over a
-             desktop rather than a page. -->
+             desktop rather than a page. Solid under the pointer and
+             faded when the pointer is off it, so the desktop shows through
+             while it lingers or is pinned. -->
         <Border x:Name="Bar" VerticalAlignment="Top" HorizontalAlignment="Center"
-                RequestedTheme="Dark" CornerRadius="0,0,8,8" Padding="4,4,8,4"
+                RequestedTheme="Dark" Background="#FF202020" CornerRadius="0,0,8,8" Padding="4,4,8,4"
                 BorderThickness="1,0,1,1" BorderBrush="#40FFFFFF"
                 PointerEntered="OnBarEntered" PointerExited="OnBarExited" SizeChanged="OnBarSized">
-            <Border.Background>
-                <AcrylicBrush TintColor="#FF202020" TintOpacity="0.55" TintLuminosityOpacity="0.7" FallbackColor="#D9202020" />
-            </Border.Background>
             <Border.RenderTransform>
                 <TranslateTransform x:Name="BarShift" />
             </Border.RenderTransform>
