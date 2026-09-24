@@ -54,11 +54,20 @@ internal sealed partial class SessionWindow : Window
     /// <summary>How close to the top edge of the window the pointer has to
     /// be for a hidden bar to come back, in the view's own units.</summary>
     private const double BarEdge = 3;
-    /// <summary>How long the pointer is gone from the bar before it goes.</summary>
-    private static readonly TimeSpan BarLinger = TimeSpan.FromSeconds(1.5);
+    /// <summary>How long the pointer is gone from the bar before it goes, so
+    /// it is out of the way as soon as it is done with.</summary>
+    private static readonly TimeSpan BarLinger = TimeSpan.FromMilliseconds(500);
+    /// <summary>How long it stays when it is shown on connect, long enough to
+    /// be noticed.</summary>
+    private static readonly TimeSpan BarIntro = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan BarSlide = TimeSpan.FromMilliseconds(180);
+    /// <summary>How much of the bar shows while the pointer is not on it —
+    /// the desktop under it shows through, as in the other remote desktop
+    /// clients; under the pointer it is solid.</summary>
+    private const double BarFaded = 0.6;
+    private static readonly TimeSpan BarFade = TimeSpan.FromMilliseconds(120);
 
-    private readonly DispatcherTimer _barTimer = new() { Interval = BarLinger };
+    private readonly DispatcherTimer _barTimer = new() { Interval = BarIntro };
     /// <summary>Whether the bar is on the screen, as opposed to slid up out
     /// of the window.</summary>
     private bool _barShown = true;
@@ -261,15 +270,22 @@ internal sealed partial class SessionWindow : Window
     {
         _overBar = true;
         _barTimer.Stop();
+        // Seen, so no longer the introduction.
+        _barTimer.Interval = BarLinger;
         ShowBar();
+        Fade(1);
     }
 
     private void OnBarExited(object sender, PointerRoutedEventArgs e)
     {
         _overBar = false;
-        if (PinButton.IsChecked != true && _dragFrom is null)
+        if (_dragFrom is null)
         {
-            _barTimer.Start();
+            Fade(BarFaded);
+            if (PinButton.IsChecked != true)
+            {
+                _barTimer.Start();
+            }
         }
     }
 
@@ -299,12 +315,26 @@ internal sealed partial class SessionWindow : Window
     private void HideBar()
     {
         _barTimer.Stop();
+        _barTimer.Interval = BarLinger;
         if (!_barShown || PinButton.IsChecked == true || _overBar)
         {
             return;
         }
         _barShown = false;
         Slide(-Bar.ActualHeight);
+        // Brought back by the edge, it is faded until the pointer is on it;
+        // the connect is the one time it is shown solid without.
+        Fade(BarFaded);
+    }
+
+    private void Fade(double to)
+    {
+        var fade = new DoubleAnimation { To = to, Duration = new Duration(BarFade) };
+        Storyboard.SetTarget(fade, Bar);
+        Storyboard.SetTargetProperty(fade, "Opacity");
+        var story = new Storyboard();
+        story.Children.Add(fade);
+        story.Begin();
     }
 
     private void Slide(double y)
@@ -353,9 +383,13 @@ internal sealed partial class SessionWindow : Window
         }
         _dragFrom = null;
         Handle.ReleasePointerCaptures();
-        if (!_overBar && PinButton.IsChecked != true)
+        if (!_overBar)
         {
-            _barTimer.Start();
+            Fade(BarFaded);
+            if (PinButton.IsChecked != true)
+            {
+                _barTimer.Start();
+            }
         }
     }
 
