@@ -5,26 +5,49 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="wlshare">
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <Grid x:Name="Root">
+        <!-- The desktop is the whole window; everything else floats over it. -->
+        <Border x:Name="DesktopHost" Background="Black" />
+        <TextBlock x:Name="Banner" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
 
-        <!-- The toolbar: what the desktop is, the way to the library behind
-             it, and the way out. Everything below it is the desktop's. -->
-        <Grid Padding="12,4" ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock x:Name="SessionTitle" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-            <Button Grid.Column="1" Content="Library" Click="OnLibrary" />
-            <Button Grid.Column="2" Content="Disconnect" Click="OnDisconnect" />
-        </Grid>
-
-        <Border x:Name="DesktopHost" Grid.Row="1" Background="Black" />
-        <TextBlock x:Name="Banner" Grid.Row="1" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <!-- The connection bar, the way a remote desktop client keeps one: a
+             translucent strip along the top edge with what the desktop is,
+             the way to the library behind it and the way out. Unpinned, it
+             slides up out of the window after a moment and comes back when
+             the pointer touches the top edge, and it can be dragged along
+             the edge by its handle. Dark whatever the theme, being over a
+             desktop rather than a page. -->
+        <Border x:Name="Bar" VerticalAlignment="Top" HorizontalAlignment="Center"
+                RequestedTheme="Dark" CornerRadius="0,0,8,8" Padding="4,4,8,4"
+                BorderThickness="1,0,1,1" BorderBrush="#40FFFFFF"
+                PointerEntered="OnBarEntered" PointerExited="OnBarExited" SizeChanged="OnBarSized">
+            <Border.Background>
+                <AcrylicBrush TintColor="#FF202020" TintOpacity="0.55" TintLuminosityOpacity="0.7" FallbackColor="#D9202020" />
+            </Border.Background>
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="BarShift" />
+            </Border.RenderTransform>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <!-- The handle: the grip and the title together are what the
+                     bar is dragged by. -->
+                <Grid x:Name="Handle" ColumnSpacing="8" Padding="4,0" Background="Transparent"
+                      PointerPressed="OnHandlePressed" PointerMoved="OnHandleMoved"
+                      PointerReleased="OnHandleReleased" PointerCaptureLost="OnHandleReleased">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE784;" FontSize="14" Opacity="0.6" VerticalAlignment="Center" />
+                    <TextBlock x:Name="SessionTitle" Grid.Column="1" VerticalAlignment="Center"
+                               MaxWidth="480" TextTrimming="CharacterEllipsis" />
+                </Grid>
+                <ToggleButton x:Name="PinButton" Padding="6" ToolTipService.ToolTip="Keep the bar showing"
+                              AutomationProperties.Name="Keep the bar showing" Click="OnPinClicked">
+                    <FontIcon Glyph="&#xE718;" FontSize="14" />
+                </ToggleButton>
+                <Button Content="Library" Click="OnLibrary" />
+                <Button Content="Disconnect" Click="OnDisconnect" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

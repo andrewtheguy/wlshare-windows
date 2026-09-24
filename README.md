@@ -73,9 +73,15 @@ something unsaved asks whether to keep it. A row is its name and where it goes
 Each desktop opens in a window of its own, in front of the library, which stays
 where it is: connecting adds a window rather than taking the place of anything
 that is up, so several desktops can be open at once, each with its own sound
-and its own clipboard. There is one library window; **Library** in a desktop's
-toolbar brings it forward from behind the desktops, and closing it while a
-desktop is open only puts it away. The library opens where it was last left.
+and its own clipboard. Along the top edge of each desktop floats a translucent
+connection bar, the way other remote desktop clients keep one: which desktop
+it is, **Library** and **Disconnect**. It slides out of the window a moment
+after the pointer leaves it and comes back when the pointer touches the top
+edge; the pin keeps it showing, and it can be dragged along the edge by its
+title. There is
+one library window; **Library** brings it forward from behind the desktops,
+and closing it while a desktop is open only puts it away. The library opens
+where it was last left.
 
 The password is saved only for a profile whose **Save the password** is ticked,
 and then sealed: see [Saved passwords](#saved-passwords). **Disconnect** closes

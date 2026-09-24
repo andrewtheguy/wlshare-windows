@@ -147,10 +147,21 @@ them and the one `ConnectWindow` they are started from. Nothing is shared but
 the saved desktops: the Windows clipboard is offered to the one window that
 has just become the one in use.
 
-**Library** in a desktop's toolbar brings the library forward without touching
-what is open: it is brought forward, not connected — connecting is the
-library's own button. **Disconnect** closes the desktop it is in, with the
-library brought forward first when that was the last one. A refused connection
+A desktop's window is all desktop: what is not the desktop floats over it. The
+connection bar is a translucent strip along the top edge — the desktop's name
+and size, a pin, **Library** and **Disconnect** — as a remote desktop client
+keeps one. Unpinned, it slides up out of the window a moment after the pointer
+leaves it, and the pointer at the top edge of the desktop brings it back — seen
+by the window after the desktop view has handled the move, which the desktop
+still gets — so the desktop has the whole window and the bar is there when it
+is looked for, as it is in mstsc and RealVNC; it is dragged along
+the edge by its title, and kept as an offset from the middle so it stays on
+the window at any size. A click on it does not keep the keyboard: the pin and
+**Library** hand it back to the desktop. **Library** brings the library
+forward without touching what is open: it is brought forward, not connected —
+connecting is the library's own button. **Disconnect** closes the desktop it is
+in, with the library brought forward first when that was the last one. A
+refused connection
 and a dropped one bring the library forward with the reason on it and which
 desktop it is about, and only then take that window away — in that order,
 because an app briefly down to no windows at all is an app that closes itself.
