@@ -86,6 +86,14 @@ internal sealed partial class ConnectView : UserControl
     /// password, or nothing at all.</summary>
     public void Show(string? error)
     {
+        // The first time up with nothing to correct, a form filled from the
+        // command line goes back to what is stored: nobody typed it, so it is
+        // not an edit to offer or ask about. With a reason it stays as it was
+        // tried, which is what there is to correct.
+        if (!Presented && error is null)
+        {
+            Fill(Stored() ?? new Profile());
+        }
         Presented = true;
         Say(error);
         var saved = _current is { } id && Profiles.Find(id)?.SealedPassword is not null;
