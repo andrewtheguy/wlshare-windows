@@ -290,7 +290,7 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 [[package]]
 name = "libvpx-prebuilt-sys"
 version = "0.1.0"
-source = "git+https://github.com/andrewtheguy/libvpx-prebuilt?tag=v1.16.0-20260918235810-31a9bf7#31a9bf7ba659ae668e7ef58883d3009b87f5e2a3"
+source = "git+https://github.com/andrewtheguy/libvpx-prebuilt?tag=v1.16.0-20260924182850-e78d74f#e78d74fff89fe8d03a6ee0323da9421cf6c5dc73"
 
 [[package]]
 name = "log"
@@ -672,8 +672,8 @@ dependencies = [
 
 [[package]]
 name = "wlshare-client"
-version = "0.0.38"
-source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.38#5ca919602c98bef33170e9587f436a8e62ef5fb0"
+version = "0.0.39"
+source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.39#10c67e1e52d2cede44ad6568ee7aadc002044768"
 dependencies = [
  "anyhow",
  "log",
@@ -690,8 +690,8 @@ dependencies = [
 
 [[package]]
 name = "wlshare-rfb"
-version = "0.0.38"
-source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.38#5ca919602c98bef33170e9587f436a8e62ef5fb0"
+version = "0.0.39"
+source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.39#10c67e1e52d2cede44ad6568ee7aadc002044768"
 dependencies = [
  "aes",
  "eax",
