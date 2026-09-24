@@ -672,8 +672,8 @@ dependencies = [
 
 [[package]]
 name = "wlshare-client"
-version = "0.0.36"
-source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.36#adc0740c93ec2256be3c27902aaa5ecda586c617"
+version = "0.0.38"
+source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.38#5ca919602c98bef33170e9587f436a8e62ef5fb0"
 dependencies = [
  "anyhow",
  "log",
@@ -690,8 +690,8 @@ dependencies = [
 
 [[package]]
 name = "wlshare-rfb"
-version = "0.0.36"
-source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.36#adc0740c93ec2256be3c27902aaa5ecda586c617"
+version = "0.0.38"
+source = "git+https://github.com/andrewtheguy/wlshare.git?tag=v0.0.38#5ca919602c98bef33170e9587f436a8e62ef5fb0"
 dependencies = [
  "aes",
  "eax",
@@ -707,6 +707,16 @@ dependencies = [
  "symphonia-core",
  "thiserror",
  "tokio",
+ "yuv",
+]
+
+[[package]]
+name = "yuv"
+version = "0.8.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a295923535c00a4e72a50a0a1130097f93160b39892dd4d2d006b1e2b90d6bf9"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
