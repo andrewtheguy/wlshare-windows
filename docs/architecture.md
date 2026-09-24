@@ -81,20 +81,26 @@ one `ClientDensity`.
 
 ## Where a session begins
 
-`ConnectView` is the saved desktops as a list beside a form for the one
-selected — a name, the host, the port, the user name, the password, the
+`ConnectView` is the library — the saved desktops as a list beside a form for
+the one selected, a name, the host, the port, the user name, the password, the
 **Encoding** and **Play the desktop's sound** — and it is what the app opens
-on. `--server host:port` on the command line skips it, with `--audio` for the
+on. `ConnectWindow` is the one window it lives in, made once and brought
+forward or put away, never made again, and it opens where it was last left.
+`--server host:port` on the command line skips it, with `--audio` for the
 checkbox and `--encoding zrle` for the encoding, which is VP9 without it.
 
-Every connection made from the form is to a profile. **Connect** writes the form
-into the selected one, or makes a new one of it when none is selected, so the
-list is the history too; the form is also written back when the selection
-moves and when the window closes. Only a port that is not one keeps the
-window open, with the reason on it; a list or a password that will not save
-would fail the same way at every try, so the window closes past it. A row is
-two lines of text, the name and who goes where, and nothing is captured from
-the desktop to put beside it. The profiles, and which one was showing, are
+Every connection made from the form is to a profile. Nothing is written by
+itself: **Save** writes the form into the selected one, or makes a new one of
+it when none is selected, and **Connect** does the same before connecting, so
+the list is the history too. **Save** is offered only while the form differs
+from what is stored, and moving the selection, closing the window or closing
+the app with an unsaved edit asks whether to keep it, the way a document does —
+**Don't Save** puts the form back as it is stored, so a dropped edit does not
+come back with the window. A form filled from the command line but never shown
+is not asked about: nobody typed it. A new desktop from **+** is only a cleared
+form until it is saved. A row is two lines of text, the name and who goes
+where, and nothing is captured from the desktop to put beside it. The profiles,
+which one was showing and where the library window was left are
 `%LOCALAPPDATA%\wlshare\profiles.json`, written beside itself and moved into
 place.
 
@@ -132,27 +138,44 @@ is the only place a password is ever typed.
 ## A desktop to a window
 
 A desktop opens in a window of its own and stays there: **Connect** adds a
-session beside whatever is already open, never in place of it, so several
-desktops stand side by side, each with its own socket, its own decoders and its
-own sound. `SessionWindow` is one of them — the window, the `Client` under it,
-the `DesktopView` in it, the clipboard and the sound — and `App` holds the list
-of them and the one `ConnectWindow` they are started from. Nothing is shared
-but the saved desktops: the Windows clipboard is offered to the one window that
+session in front of the library, never in place of it or of anything else
+open, so several desktops stand side by side, each with its own socket, its
+own decoders and its own sound, and the library stays where it is behind them.
+`SessionWindow` is one of them — the window, the `Client` under it, the
+`DesktopView` in it, the clipboard and the sound — and `App` holds the list of
+them and the one `ConnectWindow` they are started from. Nothing is shared but
+the saved desktops: the Windows clipboard is offered to the one window that
 has just become the one in use.
 
-The form is put away when a session opens and comes back on **New connection**,
-which leaves the desktops where they are, and on **Disconnect**, which closes
-the one it is in afterwards. A refused connection and a dropped one put it back
-with the reason on it and which desktop it is about, and only then take that
-window away — in that order, because an app briefly down to no windows at all
-is an app that closes itself.
+A desktop's window is all desktop: what is not the desktop floats over it. The
+connection bar is a translucent strip along the top edge — the desktop's name
+and size, a pin, **Library** and **Disconnect** — as a remote desktop client
+keeps one. Unpinned, it slides up out of the window a moment after the pointer
+leaves it, and the pointer at the top edge of the desktop brings it back — seen
+by the window after the desktop view has handled the move, which the desktop
+still gets — so the desktop has the whole window and the bar is there when it
+is looked for, as it is in mstsc and RealVNC; it is dragged along
+the edge by its title, and kept as an offset from the middle so it stays on
+the window at any size. A click on it does not keep the keyboard: the pin and
+**Library** hand it back to the desktop. **Library** brings the library
+forward without touching what is open: it is brought forward, not connected —
+connecting is the library's own button. **Disconnect** closes the desktop it is
+in, with the library brought forward first when that was the last one. A
+refused connection
+and a dropped one bring the library forward with the reason on it and which
+desktop it is about, and only then take that window away — in that order,
+because an app briefly down to no windows at all is an app that closes itself.
 
 Closing a desktop's window ends that session and joins its thread while the
 window is still there for the callbacks to have reached. Closing the last one
-with the form put away rather than asked for closes the form too, and with it
-the app; closing the form while a desktop is open only puts it away again,
-since it is the only form there is. Each window opens three quarters of its
-screen, a step down and right of the desktop opened before it.
+with the library put away rather than asked for closes the library too, and
+with it the app; closing the library while a desktop is open only puts it away
+again, since it is the only library there is, and with something unsaved in
+the form it asks first. Each desktop window opens three quarters of its
+screen, a step down and right of the desktop opened before it; the library
+opens where it was last left, clamped into the work area of the screen that
+place is on, and in the middle of the screen the first time or when that
+screen is gone.
 
 ## Threads
 

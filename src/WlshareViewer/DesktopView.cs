@@ -363,7 +363,7 @@ internal sealed unsafe partial class DesktopView : UserControl
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        // A click is where the keyboard goes too: the toolbar may have had it.
+        // A click is where the keyboard goes too: the bar may have had it.
         Focus(FocusState.Pointer);
         // Captured, so a drag that leaves the window still lets go inside it.
         CapturePointer(e.Pointer);

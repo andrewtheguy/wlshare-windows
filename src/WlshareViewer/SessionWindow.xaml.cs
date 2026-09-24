@@ -1,26 +1,34 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Animation;
 using WlshareViewer.Interop;
 
 namespace WlshareViewer;
 
 /// <summary>
 /// One connection, in a window of its own: the desktop on the screen, the
-/// session behind it, the Windows clipboard and the desktop's sound.
+/// session behind it, the Windows clipboard and the desktop's sound — and,
+/// floating over the top edge of the desktop, the connection bar that says
+/// which desktop it is and holds <b>Library</b> and <b>Disconnect</b>.
 ///
 /// A window is a session and a session is a window — several stand side by
 /// side, each with its own socket, its own decoders and its own sound, and
 /// none of them knows about the others. What is shared between them is the
-/// list of saved desktops and the form over it, which is
-/// <see cref="ConnectWindow"/>'s. Everything that is about the desktop on the
+/// library they were opened from, <see cref="ConnectWindow"/>, which stays
+/// behind them. Everything that is about the desktop on the
 /// screen is in <see cref="DesktopView"/>; everything about the wire is in the
 /// Rust core.
 /// </summary>
 internal sealed partial class SessionWindow : Window
 {
-    /// <summary>The form, please: <b>New connection</b>, which leaves this
-    /// desktop where it is, and <b>Disconnect</b>, which closes it after.</summary>
-    public event Action? FormWanted;
+    /// <summary>The library forward, please: <b>Library</b>, which leaves this
+    /// desktop where it is.</summary>
+    public event Action? LibraryWanted;
+    /// <summary><b>Disconnect</b>: this desktop closed, please. The app does
+    /// it, with the library up first when this is the last one, so the app is
+    /// never for a moment down to no windows at all.</summary>
+    public event Action<SessionWindow>? Leaving;
     /// <summary>The connection ended by itself — refused, or dropped — with the
     /// reason. The window is still there when this is called; closing it is the
     /// app's, which has somewhere to put the reason first.</summary>
@@ -40,6 +48,27 @@ internal sealed partial class SessionWindow : Window
     /// other.</summary>
     private const int CascadeStep = 32;
     private const int CascadeWrap = 8;
+
+    // ── The bar ─────────────────────────────────────────────────────────────
+
+    /// <summary>How close to the top edge of the window the pointer has to
+    /// be for a hidden bar to come back, in the view's own units.</summary>
+    private const double BarEdge = 3;
+    /// <summary>How long the pointer is gone from the bar before it goes.</summary>
+    private static readonly TimeSpan BarLinger = TimeSpan.FromSeconds(1.5);
+    private static readonly TimeSpan BarSlide = TimeSpan.FromMilliseconds(180);
+
+    private readonly DispatcherTimer _barTimer = new() { Interval = BarLinger };
+    /// <summary>Whether the bar is on the screen, as opposed to slid up out
+    /// of the window.</summary>
+    private bool _barShown = true;
+    /// <summary>Set while the pointer is over the bar, which is what keeps it
+    /// from going.</summary>
+    private bool _overBar;
+    /// <summary>Where the bar was dragged to along the edge, from the middle,
+    /// and where a drag in progress started.</summary>
+    private double _barOffset;
+    private double? _dragFrom;
 
     public SessionWindow(Destination destination, int cascade)
     {
@@ -69,10 +98,20 @@ internal sealed partial class SessionWindow : Window
         var desktop = new DesktopView();
         _desktop = desktop;
         DesktopHost.Child = desktop;
+        // The bar hides completely, so the top edge of the desktop is what
+        // brings it back — seen after the view has handled the move, which
+        // the desktop must still get.
+        desktop.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnDesktopPointerMoved), handledEventsToo: true);
         SessionTitle.Text = destination.Label;
         Title = $"{destination.Label} — wlshare";
         Banner.Text = $"Connecting to {destination.Label}…";
         Banner.Visibility = Visibility.Visible;
+
+        // Up to begin with, so it is seen once, and gone after a moment
+        // unless it is pinned or the pointer is on it.
+        _barTimer.Tick += (_, _) => HideBar();
+        _barTimer.Start();
+        Root.SizeChanged += (_, _) => PlaceBar();
 
         // The first surface is the view's own size, so the desktop is asked to
         // match before the first frame rather than after it — which it cannot
@@ -119,6 +158,7 @@ internal sealed partial class SessionWindow : Window
     /// twice.</summary>
     private void EndSession()
     {
+        _barTimer.Stop();
         _desktop?.Detach();
         _desktop = null;
         DesktopHost.Child = null;
@@ -171,13 +211,158 @@ internal sealed partial class SessionWindow : Window
     private static string Scale(double scale) =>
         scale == Math.Round(scale) ? $"{scale:0}×" : $"{scale:0.00}×";
 
-    private void OnNewConnection(object sender, RoutedEventArgs e) => FormWanted?.Invoke();
-
-    /// <summary>The form, and this desktop away — in that order, so the app is
-    /// never for a moment down to no windows at all.</summary>
-    private void OnDisconnect(object sender, RoutedEventArgs e)
+    /// <summary>The library forward — and the keyboard back on the desktop
+    /// for when this window is next in front, rather than left on the
+    /// button.</summary>
+    private void OnLibrary(object sender, RoutedEventArgs e)
     {
-        FormWanted?.Invoke();
-        Close();
+        _desktop?.Focus(FocusState.Programmatic);
+        LibraryWanted?.Invoke();
+    }
+
+    private void OnDisconnect(object sender, RoutedEventArgs e) => Leaving?.Invoke(this);
+
+    // ── The bar ─────────────────────────────────────────────────────────────
+
+    /// <summary>Pinned, the bar stays; unpinned, it goes once the pointer has
+    /// left it. Either way the keyboard goes back to the desktop: a click on
+    /// the pin is not a reason for the desktop to lose it.</summary>
+    private void OnPinClicked(object sender, RoutedEventArgs e)
+    {
+        if (PinButton.IsChecked == true)
+        {
+            _barTimer.Stop();
+            ShowBar();
+        }
+        else if (!_overBar)
+        {
+            _barTimer.Start();
+        }
+        _desktop?.Focus(FocusState.Programmatic);
+    }
+
+    /// <summary>The pointer at the top edge of the desktop is how a hidden
+    /// bar is asked back, as it is in the other remote desktop clients. It
+    /// slides down under the pointer, which may not move again, so the timer
+    /// runs until the pointer is on the bar.</summary>
+    private void OnDesktopPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (e.GetCurrentPoint(Root).Position.Y > BarEdge || PinButton.IsChecked == true || _overBar)
+        {
+            return;
+        }
+        ShowBar();
+        _barTimer.Stop();
+        _barTimer.Start();
+    }
+
+    /// <summary>The pointer on the bar keeps it.</summary>
+    private void OnBarEntered(object sender, PointerRoutedEventArgs e)
+    {
+        _overBar = true;
+        _barTimer.Stop();
+        ShowBar();
+    }
+
+    private void OnBarExited(object sender, PointerRoutedEventArgs e)
+    {
+        _overBar = false;
+        if (PinButton.IsChecked != true && _dragFrom is null)
+        {
+            _barTimer.Start();
+        }
+    }
+
+    /// <summary>A bar of a new size is hidden by a new amount, and may need
+    /// to come in from the edge.</summary>
+    private void OnBarSized(object sender, SizeChangedEventArgs e)
+    {
+        PlaceBar();
+        if (!_barShown)
+        {
+            // Slid, not set: a storyboard that has run holds its value over
+            // one written to the property.
+            Slide(-Bar.ActualHeight);
+        }
+    }
+
+    private void ShowBar()
+    {
+        if (_barShown)
+        {
+            return;
+        }
+        _barShown = true;
+        Slide(0);
+    }
+
+    private void HideBar()
+    {
+        _barTimer.Stop();
+        if (!_barShown || PinButton.IsChecked == true || _overBar)
+        {
+            return;
+        }
+        _barShown = false;
+        Slide(-Bar.ActualHeight);
+    }
+
+    private void Slide(double y)
+    {
+        var slide = new DoubleAnimation
+        {
+            To = y,
+            Duration = new Duration(BarSlide),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        };
+        Storyboard.SetTarget(slide, BarShift);
+        Storyboard.SetTargetProperty(slide, "Y");
+        var story = new Storyboard();
+        story.Children.Add(slide);
+        story.Begin();
+    }
+
+    // A drag on the handle moves the bar along the top edge, and no further
+    // than the edge goes: what it was dragged to is kept as an offset from
+    // the middle, so the bar stays on the window when the window changes
+    // size.
+
+    private void OnHandlePressed(object sender, PointerRoutedEventArgs e)
+    {
+        _dragFrom = e.GetCurrentPoint(Root).Position.X - _barOffset;
+        Handle.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnHandleMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_dragFrom is not { } from)
+        {
+            return;
+        }
+        _barOffset = e.GetCurrentPoint(Root).Position.X - from;
+        PlaceBar();
+        e.Handled = true;
+    }
+
+    private void OnHandleReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_dragFrom is null)
+        {
+            return;
+        }
+        _dragFrom = null;
+        Handle.ReleasePointerCaptures();
+        if (!_overBar && PinButton.IsChecked != true)
+        {
+            _barTimer.Start();
+        }
+    }
+
+    private void PlaceBar()
+    {
+        var room = Math.Max(0, (Root.ActualWidth - Bar.ActualWidth) / 2);
+        _barOffset = Math.Clamp(_barOffset, -room, room);
+        BarShift.X = _barOffset;
     }
 }
