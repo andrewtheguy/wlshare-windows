@@ -154,7 +154,7 @@ connection bar is a strip along the top edge, solid under the pointer and faded
 so the desktop shows through when the pointer is off it — the desktop's name
 and size, a pin, **Library** and **Disconnect** — as a remote desktop client
 keeps one. Unpinned, it slides up out of the window a moment after the pointer
-leaves it (half a second; two when it is shown on connect), and the pointer at
+leaves it (a second and a half; two when it is shown on connect), and the pointer at
 the top edge of the desktop brings it back — seen by the window after the
 desktop view has handled the move, which the desktop still gets — so the
 desktop has the whole window and the bar is there when it is looked for, as it

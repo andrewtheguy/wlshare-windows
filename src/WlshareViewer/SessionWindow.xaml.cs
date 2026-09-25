@@ -57,9 +57,10 @@ internal sealed partial class SessionWindow : Window
     /// <summary>How close to the top edge of the window the pointer has to
     /// be for a hidden bar to come back, in the view's own units.</summary>
     private const double BarEdge = 3;
-    /// <summary>How long the pointer is gone from the bar before it goes, so
-    /// it is out of the way as soon as it is done with.</summary>
-    private static readonly TimeSpan BarLinger = TimeSpan.FromMilliseconds(500);
+    /// <summary>How long the pointer is gone from the bar before it goes:
+    /// long enough to come back to it after overshooting, and out of the way
+    /// soon after that.</summary>
+    private static readonly TimeSpan BarLinger = TimeSpan.FromMilliseconds(1500);
     /// <summary>How long it stays when it is shown on connect, long enough to
     /// be noticed.</summary>
     private static readonly TimeSpan BarIntro = TimeSpan.FromSeconds(2);
