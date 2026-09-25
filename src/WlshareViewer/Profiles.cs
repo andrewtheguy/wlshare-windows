@@ -91,7 +91,7 @@ internal sealed record Placement
 }
 
 /// <summary>
-/// The saved profiles, in the order they were made, which one the form was
+/// The saved profiles, in the order the list shows them, which one the form was
 /// last showing and where the library window was left, in
 /// %LOCALAPPDATA%\wlshare\profiles.json.
 ///
@@ -203,6 +203,17 @@ internal sealed class ProfileStore
         {
             profiles.Add(profile);
         }
+    });
+
+    /// <summary>Put the profiles in the order of <paramref name="order"/>'s
+    /// ids. One it does not name — another launch's, added since — keeps its
+    /// place after the rest. Throws what the file does.</summary>
+    public void Reorder(IReadOnlyList<Guid> order) => Change(_selected, profiles =>
+    {
+        var rank = order.Select((id, at) => (id, at)).ToDictionary(x => x.id, x => x.at);
+        var sorted = profiles.OrderBy(p => rank.GetValueOrDefault(p.Id, int.MaxValue)).ToList();
+        profiles.Clear();
+        profiles.AddRange(sorted);
     });
 
     /// <summary>Throws what the file does.</summary>

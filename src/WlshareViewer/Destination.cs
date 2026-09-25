@@ -47,8 +47,7 @@ internal sealed record Destination
     /// menu — those get the form. There is no password argument: an argument
     /// list is in the shell's history and in every process listing. A saved one
     /// comes from the profile that goes to the same place as the same user;
-    /// anything else is typed into the form, which is what a refused connection
-    /// brings back.
+    /// anything else is typed into the form.
     /// </summary>
     public static Destination? FromArguments(string[] args)
     {

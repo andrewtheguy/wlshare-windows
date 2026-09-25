@@ -12,8 +12,9 @@
                 <ColumnDefinition Width="360" />
             </Grid.ColumnDefinitions>
 
-            <!-- The saved desktops. As tall as the form beside it (OnFormSized),
-                 and scrolling past that. -->
+            <!-- The saved desktops, in the order their rows are dragged into. As
+                 tall as the form beside it (OnFormSized), and scrolling past
+                 that. -->
             <Grid x:Name="ListPanel" RowSpacing="4" VerticalAlignment="Top">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*" />
@@ -22,6 +23,8 @@
                 <Border BorderThickness="1" CornerRadius="{StaticResource ControlCornerRadius}"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
                     <ListView x:Name="List" SelectionMode="Single"
+                              CanDragItems="True" CanReorderItems="True" AllowDrop="True"
+                              DragItemsStarting="OnDragStarting" DragItemsCompleted="OnDragCompleted"
                               SelectionChanged="OnSelectionChanged" DoubleTapped="OnListDoubleTapped" />
                 </Border>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4">

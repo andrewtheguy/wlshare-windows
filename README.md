@@ -87,8 +87,9 @@ The password is saved only for a profile whose **Save the password** is ticked,
 and then sealed: see [Saved passwords](#saved-passwords). **Disconnect** closes
 that desktop, with the library brought forward first when it was the last one;
 closing the last window — the library, or a desktop with the library put away —
-closes the app; and a connection that is refused or drops brings the library
-forward with the reason on it and which desktop it is about.
+closes the app; and a connection that is refused or drops says why in its own
+window, which stays open, with **Disconnect** become **Close**, until it is
+closed.
 
 An empty password asks for the `None` security type; anything else asks for
 RSA-AES, which is the only type this client authenticates with — and the one
@@ -106,7 +107,7 @@ WlshareViewer.exe --server 192.168.1.10:5900 --username me --audio --encoding zr
 There is no password argument, deliberately: an argument list is in the
 shell's history and in every process listing. A password saved in a profile for
 the same host, port and user name is used, and anything else is typed into the
-form — which is what a connection refused for want of one brings back.
+form, which **Library** opens filled with what was tried.
 
 ### Saved passwords
 

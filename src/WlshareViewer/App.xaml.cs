@@ -10,8 +10,9 @@ namespace WlshareViewer;
 /// <b>Connect</b> adds a session in front of the library, which stays where it
 /// is; it never takes one away, so several desktops stand side by side. There
 /// is one library window, brought forward rather than made again: on
-/// <b>Library</b>, on the last <b>Disconnect</b>, and whenever a session ends
-/// by itself, with the reason and which desktop it is about. Closing the last
+/// <b>Library</b> and on the last <b>Disconnect</b>. A desktop's window is only
+/// ever that desktop's: a connection that is refused or drops says so in it,
+/// and it stays until it is closed. Closing the last
 /// window — the library or a desktop, with the library put away — closes the
 /// app.
 /// </summary>
@@ -96,14 +97,6 @@ public partial class App : Application
             {
                 _library?.Show(null);
             }
-            window.Close();
-        };
-        session.Dropped += (window, reason) =>
-        {
-            // The library first, with which desktop it is about, and only then
-            // the window away — in that order, because an app briefly down to
-            // no windows at all is an app that closes itself.
-            _library?.Show($"{window.Destination.Label}: {reason}");
             window.Close();
         };
         session.Closed += (_, _) => Ended(session);
