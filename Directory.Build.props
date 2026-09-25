@@ -6,7 +6,7 @@
        is the MSI's ProductVersion. MSI compares the first three fields, so a
        plain major.minor.patch keeps MajorUpgrade working. -->
   <PropertyGroup>
-    <WlshareAppVersion Condition="'$(WlshareAppVersion)' == ''">0.0.12</WlshareAppVersion>
+    <WlshareAppVersion Condition="'$(WlshareAppVersion)' == ''">0.0.13</WlshareAppVersion>
   </PropertyGroup>
 
 </Project>
