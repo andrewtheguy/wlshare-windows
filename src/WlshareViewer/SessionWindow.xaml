@@ -8,7 +8,8 @@
     <Grid x:Name="Root">
         <!-- The desktop is the whole window; everything else floats over it. -->
         <Border x:Name="DesktopHost" Background="Black" />
-        <TextBlock x:Name="Banner" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <TextBlock x:Name="Banner" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   TextAlignment="Center" TextWrapping="Wrap" Margin="24" />
 
         <!-- The connection bar, the way a remote desktop client keeps one: a
              translucent strip along the top edge with what the desktop is,
@@ -45,7 +46,7 @@
                     <FontIcon Glyph="&#xE718;" FontSize="14" />
                 </ToggleButton>
                 <Button Content="Library" Click="OnLibrary" />
-                <Button Content="Disconnect" Click="OnDisconnect" />
+                <Button x:Name="DisconnectButton" Content="Disconnect" Click="OnDisconnect" />
             </StackPanel>
         </Border>
     </Grid>

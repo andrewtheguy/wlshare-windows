@@ -9,8 +9,9 @@ namespace WlshareViewer;
 /// one of it for the whole app, made once and brought forward or put away
 /// rather than made again, and every session is started from it — it stays
 /// where it is when one is, behind the desktop that opens in front, and comes
-/// forward on <b>Library</b>, on the last <b>Disconnect</b>, and whenever a
-/// session ends by itself. It opens where it was last left.
+/// forward on <b>Library</b> and on the last <b>Disconnect</b> — never for a
+/// desktop's trouble, which that desktop's window shows. It opens where it
+/// was last left.
 ///
 /// Closing it with something unsaved in the form asks first, as a document
 /// would. Closing it while a desktop is open only puts it away, since it is
@@ -69,7 +70,7 @@ internal sealed partial class ConnectWindow : Window
     }
 
     /// <summary>Bring the library forward, with <paramref name="error"/> on
-    /// it when this is the second attempt at something.</summary>
+    /// it when the form's own contents could not be used.</summary>
     public void Show(string? error)
     {
         AppWindow.Show();

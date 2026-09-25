@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -19,7 +20,8 @@ namespace WlshareViewer;
 /// it when none is selected, and <b>Connect</b> does the same and then
 /// connects, so a desktop connected to once is in the list from then on.
 /// <b>+</b> clears the form for a new desktop, which is in the list only once
-/// it is saved, and <b>−</b> deletes one. Moving the selection, closing the
+/// it is saved, and <b>−</b> deletes one, and a row dragged up or down the
+/// list stays where it is dropped. Moving the selection, closing the
 /// window and closing the app with something unsaved in the form ask whether
 /// to keep it, as a document would.
 ///
@@ -28,9 +30,9 @@ namespace WlshareViewer;
 /// <b>Library</b> in a desktop's toolbar brings it forward from behind
 /// whatever is open.
 ///
-/// It is also where a session ends up — a refused or dropped connection brings
-/// this back with the reason on it, which desktop it is about, and the form as
-/// it was left, so there is somewhere to correct and retry.
+/// It never shows a desktop's own trouble: a refused or dropped connection says
+/// so in that desktop's window. What it shows is its own — a saved password
+/// that will not open, a port that is not one.
 /// </summary>
 internal sealed partial class ConnectView : UserControl
 {
@@ -42,14 +44,16 @@ internal sealed partial class ConnectView : UserControl
     public ProfileStore Profiles { get; } = new();
 
     /// <summary>Whether the window has been on the screen. A form nobody has
-    /// seen holds nothing anybody typed: a command-line launch fills it in
-    /// case the connection is refused, and closing the app must not ask to
-    /// save that.</summary>
+    /// seen holds nothing anybody typed: a command-line launch fills it with
+    /// what it tried, and closing the app must not ask to save that.</summary>
     public bool Presented { get; private set; }
 
     /// <summary>The profile the form is showing; null for a desktop not saved
     /// yet.</summary>
     private Guid? _current;
+    /// <summary>The list's rows, a collection the list can move a dragged one
+    /// around in.</summary>
+    private readonly ObservableCollection<ListViewItem> _rows = [];
     /// <summary>Set while the list is changed from here, so its selection
     /// moving is not taken for a click.</summary>
     private bool _moving;
@@ -60,6 +64,7 @@ internal sealed partial class ConnectView : UserControl
     public ConnectView()
     {
         InitializeComponent();
+        List.ItemsSource = _rows;
         Refill();
         Select(Profiles.Selected is { } selected && Profiles.Find(selected) is not null
             ? selected
@@ -72,8 +77,9 @@ internal sealed partial class ConnectView : UserControl
 
     /// <summary>Fill the form with a destination from the command line, before
     /// it is ever shown: the profile it matched if there is one, or a desktop
-    /// not saved yet. A connection refused brings this back as it was tried —
-    /// with the command line's sound and encoding, not the profile's.</summary>
+    /// not saved yet, as it was tried — with the command line's sound and
+    /// encoding, not the profile's — for <b>Library</b> to retry
+    /// from.</summary>
     public void Load(Destination destination, Guid? profile)
     {
         Select(profile);
@@ -432,7 +438,7 @@ internal sealed partial class ConnectView : UserControl
         _moving = false;
         if (row >= 0)
         {
-            List.ScrollIntoView(List.Items[row]);
+            List.ScrollIntoView(_rows[row]);
         }
         Shown(row >= 0 ? id : null);
     }
@@ -486,14 +492,43 @@ internal sealed partial class ConnectView : UserControl
         }
     }
 
+    /// <summary>A row being dragged: the list takes it out and puts it back
+    /// where it is dropped, and neither is the selection moving.</summary>
+    private void OnDragStarting(object sender, DragItemsStartingEventArgs e)
+    {
+        _moving = true;
+    }
+
+    /// <summary>The profiles saved in the order the rows are now in, and the
+    /// list made again from what was saved, with the selection where it
+    /// was.</summary>
+    private void OnDragCompleted(ListViewBase sender, DragItemsCompletedEventArgs e)
+    {
+        _moving = false;
+        var order = _rows.Select(row => (Guid)row.Tag).ToList();
+        if (!order.SequenceEqual(Profiles.Profiles.Select(profile => profile.Id)))
+        {
+            try
+            {
+                Profiles.Reorder(order);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                Say($"The desktops could not be saved: {error.Message}");
+            }
+        }
+        Refill();
+        Select(_current);
+    }
+
     /// <summary>The list brought up to the saved profiles — which another
     /// launch of the app may have added to or taken from since it was made —
     /// with the selection kept.</summary>
     private void Sync()
     {
         var profiles = Profiles.Profiles;
-        var same = List.Items.Count == profiles.Count
-            && profiles.Select((profile, row) => ((ListViewItem)List.Items[row]).Tag is Guid id && id == profile.Id).All(x => x);
+        var same = _rows.Count == profiles.Count
+            && profiles.Select((profile, row) => _rows[row].Tag is Guid id && id == profile.Id).All(x => x);
         if (!same)
         {
             Refill();
@@ -502,7 +537,7 @@ internal sealed partial class ConnectView : UserControl
         }
         for (var row = 0; row < profiles.Count; row++)
         {
-            ((ListViewItem)List.Items[row]).Content = Row(profiles[row]);
+            _rows[row].Content = Row(profiles[row]);
         }
     }
 
@@ -511,10 +546,10 @@ internal sealed partial class ConnectView : UserControl
     private void Refill()
     {
         _moving = true;
-        List.Items.Clear();
+        _rows.Clear();
         foreach (var profile in Profiles.Profiles)
         {
-            List.Items.Add(new ListViewItem { Content = Row(profile), Tag = profile.Id });
+            _rows.Add(new ListViewItem { Content = Row(profile), Tag = profile.Id });
         }
         _moving = false;
     }

@@ -98,7 +98,8 @@ the app with an unsaved edit asks whether to keep it, the way a document does �
 **Don't Save** puts the form back as it is stored, so a dropped edit does not
 come back with the window. A form filled from the command line but never shown
 is not asked about: nobody typed it. A new desktop from **+** is only a cleared
-form until it is saved. A row is two lines of text, the name and who goes
+form until it is saved. The list is in the order the rows are dragged into, a
+new desktop joining at the bottom. A row is two lines of text, the name and who goes
 where, and nothing is captured from the desktop to put beside it. The profiles,
 which one was showing and where the library window was left are
 `%LOCALAPPDATA%\wlshare\profiles.json`, written beside itself and moved into
@@ -132,8 +133,9 @@ attempted without it.
 The password is not a command-line argument, because an argument list is in the
 shell's history and every process listing. A `--server` launch takes the
 password saved in the first profile with the same host, port and user name, and
-a destination with none — or one that is refused — ends up at the form, which
-is the only place a password is ever typed.
+a destination with none is typed into the form, which is the only place a
+password is ever typed: a refused one says so in the desktop's window, and
+**Library** has the form filled with what was tried.
 
 ## A desktop to a window
 
@@ -162,10 +164,12 @@ does not keep the keyboard: the pin and **Library** hand it back to the
 desktop. **Library** brings the library forward without touching what is open:
 it is brought forward, not connected — connecting is the library's own button.
 **Disconnect** closes the desktop it is in, with the library brought forward
-first when that was the last one. A refused connection and a dropped one bring
-the library forward with the reason on it and which desktop it is about, and
-only then take that window away — in that order, because an app briefly down to
-no windows at all is an app that closes itself.
+first when that was the last one. A refused connection and a dropped one end
+the session but not the window: the desktop is replaced by the reason, the bar
+stays up with **Disconnect** become **Close** and no pin, and the window stays
+until it is closed. A desktop's window is only ever that desktop's and the
+library only ever the library — neither turns into the other, and the library
+is not brought forward for a desktop's trouble.
 
 Closing a desktop's window ends that session and joins its thread while the
 window is still there for the callbacks to have reached. Closing the last one

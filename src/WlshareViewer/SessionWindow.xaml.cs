@@ -19,20 +19,23 @@ namespace WlshareViewer;
 /// behind them. Everything that is about the desktop on the
 /// screen is in <see cref="DesktopView"/>; everything about the wire is in the
 /// Rust core.
+///
+/// A connection refused or dropped ends the session but not the window: the
+/// desktop goes, the reason stays in its place and the bar stays up, with
+/// <b>Disconnect</b> become <b>Close</b>, until the window is closed. The
+/// window is only ever this desktop's — never the library, and never another
+/// connection.
 /// </summary>
 internal sealed partial class SessionWindow : Window
 {
     /// <summary>The library forward, please: <b>Library</b>, which leaves this
     /// desktop where it is.</summary>
     public event Action? LibraryWanted;
-    /// <summary><b>Disconnect</b>: this desktop closed, please. The app does
-    /// it, with the library up first when this is the last one, so the app is
-    /// never for a moment down to no windows at all.</summary>
+    /// <summary><b>Disconnect</b>, or <b>Close</b> once the connection has
+    /// ended: this desktop closed, please. The app does it, with the library
+    /// up first when this is the last one, so the app is never for a moment
+    /// down to no windows at all.</summary>
     public event Action<SessionWindow>? Leaving;
-    /// <summary>The connection ended by itself — refused, or dropped — with the
-    /// reason. The window is still there when this is called; closing it is the
-    /// app's, which has somewhere to put the reason first.</summary>
-    public event Action<SessionWindow, string>? Dropped;
 
     /// <summary>Where this one went, for its title and for saying which desktop
     /// a reason belongs to.</summary>
@@ -71,6 +74,10 @@ internal sealed partial class SessionWindow : Window
     /// <summary>Whether the bar is on the screen, as opposed to slid up out
     /// of the window.</summary>
     private bool _barShown = true;
+    /// <summary>Set once the connection has ended by itself, which keeps the
+    /// bar up: with the desktop gone there is no top edge to bring it back
+    /// by, and <b>Close</b> is on it.</summary>
+    private bool _ended;
     /// <summary>Set while the pointer is over the bar, which is what keeps it
     /// from going.</summary>
     private bool _overBar;
@@ -210,11 +217,27 @@ internal sealed partial class SessionWindow : Window
                 break;
             case Client.State.Closed:
                 EndSession();
-                Dropped?.Invoke(this, status.Error ?? "The connection closed.");
+                Ended(status.Error ?? "The connection closed.");
                 return;
         }
         _clipboard?.Take();
         _desktop.Refresh();
+    }
+
+    /// <summary>The reason where the desktop was, and the bar up for good
+    /// with the way out on it. Nothing closes the window but the person using
+    /// it.</summary>
+    private void Ended(string reason)
+    {
+        _ended = true;
+        Banner.Text = $"Disconnected from {Destination.Label}\n{reason}";
+        Banner.Visibility = Visibility.Visible;
+        SessionTitle.Text = $"{Destination.Label} — disconnected";
+        Title = $"{Destination.Label} — disconnected — wlshare";
+        DisconnectButton.Content = "Close";
+        PinButton.Visibility = Visibility.Collapsed;
+        ShowBar();
+        Fade(1);
     }
 
     private static string Scale(double scale) =>
@@ -316,7 +339,7 @@ internal sealed partial class SessionWindow : Window
     {
         _barTimer.Stop();
         _barTimer.Interval = BarLinger;
-        if (!_barShown || PinButton.IsChecked == true || _overBar)
+        if (!_barShown || _ended || PinButton.IsChecked == true || _overBar)
         {
             return;
         }
