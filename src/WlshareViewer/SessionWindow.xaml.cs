@@ -303,7 +303,9 @@ internal sealed partial class SessionWindow : Window
     private void OnBarExited(object sender, PointerRoutedEventArgs e)
     {
         _overBar = false;
-        if (_dragFrom is null)
+        // Solid for good once the connection has ended: there is no desktop
+        // under it to show through.
+        if (_dragFrom is null && !_ended)
         {
             Fade(BarFaded);
             if (PinButton.IsChecked != true)
@@ -407,7 +409,7 @@ internal sealed partial class SessionWindow : Window
         }
         _dragFrom = null;
         Handle.ReleasePointerCaptures();
-        if (!_overBar)
+        if (!_overBar && !_ended)
         {
             Fade(BarFaded);
             if (PinButton.IsChecked != true)
